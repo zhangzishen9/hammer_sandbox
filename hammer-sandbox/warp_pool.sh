@@ -38,10 +38,12 @@ register_warp_account() {
     echo "$priv_key,2606:4700:d0::1,[0,0,0]"
 }
 
-# 生成 N 个 WARP Outbound 节点 (带有唯一 Tag)
+# 生成 N 个 WARP Outbound 节点 (支持 Psiphon 指定国家)
 generate_warp_pool() {
     local pool_size=$1
+    local country=$2
     log_info "正在申请 $pool_size 个全新的 Cloudflare 账号..."
+    [[ -n "$country" ]] && log_info "已开启 [全球通模式]：指定出口国家为 $country"
     
     echo "[" > "$WARP_POOL_CONF"
     for i in $(seq 1 $pool_size); do
@@ -51,6 +53,12 @@ generate_warp_pool() {
         priv=$(echo $acc_info | cut -d',' -f1)
         ip6=$(echo $acc_info | cut -d',' -f2)
         res=$(echo $acc_info | cut -d',' -f3)
+
+        # 构建 Psiphon 配置串 (如果用户指定了国家)
+        ps_json=""
+        if [[ -n "$country" ]]; then
+            ps_json=", \"psiphon\": { \"enabled\": true, \"country\": \"$country\" }"
+        fi
 
         cat >> "$WARP_POOL_CONF" <<EOF
     {
@@ -62,7 +70,7 @@ generate_warp_pool() {
       "private_key": "$priv",
       "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
       "reserved": $res,
-      "mtu": 1280
+      "mtu": 1280 $ps_json
     }$( [[ $i -lt $pool_size ]] && echo "," )
 EOF
         log_info "节点 warp-pool-$i 注册成功。"
