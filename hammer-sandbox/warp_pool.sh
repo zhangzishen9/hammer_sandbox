@@ -69,7 +69,7 @@ register_warp_account() {
         fi
     fi
 
-    echo "$priv_key,$ip6,$res"
+    echo "${priv_key}|${ip6}|${res}"
 }
 
 # 生成 N 个 WARP Outbound 节点 (支持 Psiphon 指定国家)
@@ -85,9 +85,9 @@ generate_warp_pool() {
         acc_info=$(register_warp_account)
         [[ $? -ne 0 ]] && continue
 
-        priv=$(echo $acc_info | cut -d',' -f1)
-        ip6=$(echo $acc_info | cut -d',' -f2)
-        res=$(echo $acc_info | cut -d',' -f3)
+        priv=$(echo $acc_info | cut -d'|' -f1)
+        ip6=$(echo $acc_info | cut -d'|' -f2)
+        res=$(echo $acc_info | cut -d'|' -f3)
 
         if [[ -n "$country" ]]; then
             # 链式结构: Psiphon outbound → detour 到 WireGuard outbound
