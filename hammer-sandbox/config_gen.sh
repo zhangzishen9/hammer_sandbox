@@ -189,7 +189,11 @@ update_config_with_warp() {
         return 1
     fi
 
-    # 2. 添加 WARP 直连 VLESS 入站 (端口从 61001 开始)
+    # 2. 清理旧的 WARP 相关配置 (outbounds + inbounds + rules)
+    jq 'del(.outbounds[] | select(.tag | startswith("warp-pool-") or startswith("warp-wg-") or .tag == "Warp-Pool")) | del(.inbounds[] | select(.tag | startswith("in-warp"))) | del(.route.rules[] | select(.inbound? // [] | any(startswith("in-warp")))) | del(.route.rules[] | select(.outbound? == "Warp-Pool" and .inbound? == ["in-vl","in-vm","in-hy","in-tc","in-an"]))' \
+       "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+
+    # 3. 添加 WARP 直连 VLESS 入站 (端口从 61001 开始)
     local uuid=$(jq -r '.inbounds[0].users[0].uuid' "$config")
     local priv_key=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.private_key' "$config")
 

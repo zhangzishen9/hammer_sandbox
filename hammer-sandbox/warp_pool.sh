@@ -91,18 +91,15 @@ generate_warp_pool() {
 
         if [[ -n "$country" ]]; then
             # 链式结构: Psiphon outbound → detour 到 WireGuard outbound
-            # WireGuard 用 peers 格式 (sing-box 1.13+)
             jq --arg priv "$priv" --arg ip6 "$ip6" --argjson res "$res" --arg country "$country" \
                --arg wg_tag "warp-wg-$i" --arg ps_tag "warp-pool-$i" --arg detour "warp-wg-$i" \
                '. += [
                  {
                    type:"wireguard",
                    tag:$wg_tag,
-                   server:"engage.cloudflareclient.com",
-                   server_port:2408,
                    local_address:["172.16.0.2/32",($ip6+"/128")],
                    private_key:$priv,
-                   peers:[{public_key:"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",reserved:$res,allowed_ips:["0.0.0.0/0","::/0"]}],
+                   peers:[{public_key:"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",endpoint:"engage.cloudflareclient.com:2408",reserved:$res,allowed_ips:["0.0.0.0/0","::/0"]}],
                    mtu:1280
                  },
                  {
@@ -121,11 +118,9 @@ generate_warp_pool() {
                  {
                    type:"wireguard",
                    tag:$tag,
-                   server:"engage.cloudflareclient.com",
-                   server_port:2408,
                    local_address:["172.16.0.2/32",($ip6+"/128")],
                    private_key:$priv,
-                   peers:[{public_key:"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",reserved:$res,allowed_ips:["0.0.0.0/0","::/0"]}],
+                   peers:[{public_key:"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",endpoint:"engage.cloudflareclient.com:2408",reserved:$res,allowed_ips:["0.0.0.0/0","::/0"]}],
                    mtu:1280
                  }
                ]' "$WARP_POOL_CONF" > "${WARP_POOL_CONF}.tmp" && mv "${WARP_POOL_CONF}.tmp" "$WARP_POOL_CONF"
