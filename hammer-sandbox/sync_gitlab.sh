@@ -18,9 +18,15 @@ extract_params() {
     p_hy=$(jq -r '.inbounds[] | select(.tag=="in-hy") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
     p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
     p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
-    pbk=$(jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || \
-         $SB_BINARY_PATH generate reality-keypair 2>/dev/null | grep "Public key:" | awk '{print $3}')
-    sid=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.short_id[0] // empty' "$SB_CONF" 2>/dev/null || echo "ab12cd34")
+    pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null || jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || echo "")
+    if [[ -z "$pbk" ]]; then
+        # 从 private_key 推导 public_key
+        local priv=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.private_key' "$SB_CONF" 2>/dev/null)
+        if [[ -n "$priv" ]]; then
+            pbk=$($SB_BINARY_PATH generate reality-keypair 2>/dev/null | jq -r '.public_key // empty' 2>/dev/null || echo "")
+        fi
+    fi
+    sid=$(cat "$SB_CONFIG_DIR/reality_sid.key" 2>/dev/null || jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.short_id[0] // empty' "$SB_CONF" 2>/dev/null || echo "ab12cd34")
     ip=$(curl -s4m5 icanhazip.com)
     # 客户端使用映射地址和映射端口
     c_ip=$(get_client_addr)

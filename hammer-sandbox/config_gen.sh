@@ -27,6 +27,10 @@ gen_keys() {
         pub_key=$(echo "$rkp" | grep -i "public" | awk '{print $NF}')
     fi
     short_id=$(openssl rand -hex 8)
+    # 持久化 public_key (config.json 里只有 private_key)
+    echo "$pub_key" > "$SB_CONFIG_DIR/reality_pub.key"
+    echo "$short_id" > "$SB_CONFIG_DIR/reality_sid.key"
+    short_id=$(openssl rand -hex 8)
 }
 
 generate_config() {
