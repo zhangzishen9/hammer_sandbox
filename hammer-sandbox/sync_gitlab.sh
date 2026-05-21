@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # [大锤sand-box] 万能订阅管理模块 (Final Production Version)
-# 实现全平台(Clash/Singbox/Generic)同步推送，含五协议全量导出
+# 实现全平台(Clash/Singbox/Generic)同步推送，含五协议+WARP直连全量导出
 
 source ./core.sh
 
@@ -19,7 +19,7 @@ extract_params() {
     p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
     pbk=$(jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || \
          $SB_BINARY_PATH generate reality-keypair 2>/dev/null | grep "Public key:" | awk '{print $3}')
-    sid=$(jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.short_id[0] // empty' "$SB_CONF" 2>/dev/null || echo "ab12cd34")
+    sid=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.short_id[0] // empty' "$SB_CONF" 2>/dev/null || echo "ab12cd34")
     ip=$(curl -s4m5 icanhazip.com)
     # 客户端使用映射地址和映射端口
     c_ip=$(get_client_addr)
@@ -29,11 +29,16 @@ extract_params() {
     c_p_tc=$(get_client_port "$p_tc")
     c_p_an=$(get_client_port "$p_an")
     [[ -z "$uuid" ]] && uuid=$(jq -r '.inbounds[0].users[0].uuid' "$SB_CONF" 2>/dev/null)
+    # 提取 WARP 直连入站
+    warp_nodes=$(jq -c '[.inbounds[] | select(.tag | startswith("in-warp")) | {tag, port: .listen_port, sid: .tls.reality.short_id[0]}]' "$SB_CONF" 2>/dev/null || echo "[]")
+    warp_count=$(echo "$warp_nodes" | jq 'length')
 }
 
 # 1. 生成 Clash Meta (Mihomo) 全协议配置
 gen_clash() {
     log_info "正在生成 Mihomo (Clash) 全功能配置文件..."
+
+    # 先写 5 协议
     cat > "$SB_CONFIG_DIR/hammer_clash.yaml" <<EOF
 proxies:
   - name: 大锤-Vless
@@ -86,6 +91,41 @@ proxies:
     udp: true
     sni: www.bing.com
     skip-cert-verify: true
+EOF
+
+    # 追加 WARP 直连节点
+    for i in $(seq 0 $((warp_count - 1))); do
+        local w_port=$(echo "$warp_nodes" | jq -r ".[$i].port")
+        local w_sid=$(echo "$warp_nodes" | jq -r ".[$i].sid")
+        local w_cport=$(get_client_port "$w_port")
+        local w_idx=$((i + 1))
+        cat >> "$SB_CONFIG_DIR/hammer_clash.yaml" <<EOF
+  - name: 大锤-WARP${w_idx}
+    type: vless
+    server: $c_ip
+    port: $w_cport
+    uuid: $uuid
+    network: tcp
+    udp: true
+    tls: true
+    flow: xtls-rprx-vision
+    servername: apple.com
+    reality-opts:
+      public-key: $pbk
+      short-id: $w_sid
+    client-fingerprint: chrome
+EOF
+    done
+
+    # 构建 proxy-groups 的 WARP 节点列表
+    local warp_proxy_list=""
+    local warp_select_list=""
+    for i in $(seq 1 $warp_count); do
+        warp_proxy_list+=$'\n'"      - 大锤-WARP${i}"
+        warp_select_list+=$'\n'"      - 大锤-WARP${i}"
+    done
+
+    cat >> "$SB_CONFIG_DIR/hammer_clash.yaml" <<EOF
 
 proxy-groups:
   - name: 选择代理节点
@@ -97,7 +137,7 @@ proxy-groups:
       - 大锤-Vmess
       - 大锤-Hysteria2
       - 大锤-Tuic
-      - 大锤-AnyTLS
+      - 大锤-AnyTLS${warp_select_list}
       - DIRECT
   - name: 负载均衡
     type: load-balance
@@ -108,7 +148,7 @@ proxy-groups:
       - 大锤-Vless
       - 大锤-Vmess
       - 大锤-Hysteria2
-      - 大锤-Tuic
+      - 大锤-Tuic${warp_proxy_list}
   - name: 自动选择
     type: url-test
     url: http://www.gstatic.com/generate_204
@@ -119,7 +159,7 @@ proxy-groups:
       - 大锤-Vmess
       - 大锤-Hysteria2
       - 大锤-Tuic
-      - 大锤-AnyTLS
+      - 大锤-AnyTLS${warp_proxy_list}
 
 rules:
   - GEOSITE,category-ads-all,REJECT
@@ -131,6 +171,26 @@ EOF
 
 # 2. 生成 Sing-Box 客户端配置
 gen_singbox_client() {
+    # 构建 WARP outbound 条目
+    local warp_outbounds=""
+    local warp_auto_list=""
+    local warp_proxy_list=""
+    for i in $(seq 0 $((warp_count - 1))); do
+        local w_port=$(echo "$warp_nodes" | jq -r ".[$i].port")
+        local w_sid=$(echo "$warp_nodes" | jq -r ".[$i].sid")
+        local w_cport=$(get_client_port "$w_port")
+        local w_idx=$((i + 1))
+        warp_outbounds+="
+    { \"type\": \"vless\", \"tag\": \"大锤-WARP${w_idx}\", \"server\": \"$c_ip\", \"server_port\": $w_cport,
+      \"uuid\": \"$uuid\", \"flow\": \"xtls-rprx-vision\",
+      \"tls\": { \"enabled\": true, \"server_name\": \"apple.com\", \"utls\": { \"enabled\": true, \"fingerprint\": \"chrome\" },
+        \"reality\": { \"enabled\": true, \"public_key\": \"$pbk\", \"short_id\": \"$w_sid\" } } },"
+        warp_auto_list+="\"大锤-WARP${w_idx}\","
+        warp_proxy_list+="\"大锤-WARP${w_idx}\","
+    done
+    warp_auto_list=${warp_auto_list%,}
+    warp_proxy_list=${warp_proxy_list%,}
+
     cat > "$SB_CONFIG_DIR/hammer_singbox_client.json" <<EOF
 {
   "log": { "level": "info" },
@@ -138,13 +198,13 @@ gen_singbox_client() {
     {
       "type": "urltest",
       "tag": "auto",
-      "outbounds": ["大锤-VL","大锤-VM","大锤-HY","大锤-TC","大锤-AN"],
+      "outbounds": ["大锤-VL","大锤-VM","大锤-HY","大锤-TC","大锤-AN",${warp_auto_list}],
       "url": "http://www.gstatic.com/generate_204",
       "interval": "5m"
     },
     {
       "type": "selector", "tag": "proxy",
-      "outbounds": ["auto","大锤-VL","大锤-VM","大锤-HY","大锤-TC","大锤-AN"]
+      "outbounds": ["auto","大锤-VL","大锤-VM","大锤-HY","大锤-TC","大锤-AN",${warp_proxy_list}]
     },
     { "type": "vless", "tag": "大锤-VL", "server": "$c_ip", "server_port": $c_p_vl,
       "uuid": "$uuid", "flow": "xtls-rprx-vision",
@@ -158,7 +218,7 @@ gen_singbox_client() {
       "uuid": "$uuid", "password": "$uuid",
       "tls": { "enabled": true, "server_name": "www.bing.com", "insecure": true } },
     { "type": "anytls", "tag": "大锤-AN", "server": "$c_ip", "server_port": $c_p_an,
-      "password": "$uuid", "tls": { "enabled": true, "server_name": "www.bing.com", "insecure": true } },
+      "password": "$uuid", "tls": { "enabled": true, "server_name": "www.bing.com", "insecure": true } },${warp_outbounds}
     { "type": "direct", "tag": "direct" }
   ],
   "route": {
@@ -184,6 +244,16 @@ gen_base64_sub() {
     sub+="hysteria2://$uuid@$c_ip:$c_p_hy?security=tls&sni=www.bing.com&insecure=1#大锤-HY\n"
     sub+="tuic://$uuid:$uuid@$c_ip:$c_p_tc?sni=www.bing.com&congestion_control=bbr&allow_insecure=1#大锤-TC\n"
     sub+="anytls://user:$uuid@$c_ip:$c_p_an?sni=www.bing.com&allow_insecure=1#大锤-AN"
+
+    # 追加 WARP 直连节点
+    for i in $(seq 0 $((warp_count - 1))); do
+        local w_port=$(echo "$warp_nodes" | jq -r ".[$i].port")
+        local w_sid=$(echo "$warp_nodes" | jq -r ".[$i].sid")
+        local w_cport=$(get_client_port "$w_port")
+        local w_idx=$((i + 1))
+        sub+="\nvless://$uuid@$c_ip:$w_cport?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apple.com&fp=chrome&pbk=$pbk&sid=$w_sid&type=tcp#大锤-WARP${w_idx}"
+    done
+
     echo -n "$sub" | base64 | tr -d '\n' > "$SB_CONFIG_DIR/hammer_base64.txt"
 }
 
