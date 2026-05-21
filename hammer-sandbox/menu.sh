@@ -73,9 +73,20 @@ show_status() {
             local warp_exit_ip=""
             if systemctl is-active --quiet hammer-sb 2>/dev/null; then
                 local mixed_port=$(grep '^MIXED=' /etc/hammer-sb/ports.conf 2>/dev/null | cut -d= -f2)
-                if [[ -n "$mixed_port" ]]; then
-                    warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -oP 'ip=\K[0-9.]+')
+                # 如果没有 mixed 代理，自动添加
+                if [[ -z "$mixed_port" ]]; then
+                    mixed_port=$(shuf -i 20000-30000 -n 1)
+                    jq --arg port "$mixed_port" \
+                       '.inbounds += [{type:"mixed",tag:"in-mixed",listen:"::",listen_port:($port|tonumber)}]' \
+                       "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
+                    jq '(.route.rules[] | select(.inbound == ["in-vl","in-vm","in-hy","in-tc","in-an"])).outbound = "Warp-Pool"' \
+                       "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
+                    jq '. += [{inbound:["in-mixed"],outbound:"Warp-Pool"}]' "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
+                    echo "MIXED=$mixed_port" >> /etc/hammer-sb/ports.conf
+                    systemctl reload hammer-sb 2>/dev/null
+                    sleep 1
                 fi
+                warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -oP 'ip=\K[0-9.]+')
             fi
             local warp_ip_info=""
             [[ -n "$warp_exit_ip" ]] && warp_ip_info="  出口IP:${green}${warp_exit_ip}${plain}"
