@@ -81,7 +81,7 @@ show_status() {
                        "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
                     jq '(.route.rules[] | select(.inbound == ["in-vl","in-vm","in-hy","in-tc","in-an"])).outbound = "Warp-Pool"' \
                        "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
-                    jq '. += [{inbound:["in-mixed"],outbound:"Warp-Pool"}]' "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
+                    jq '.route.rules += [{inbound:["in-mixed"],outbound:"Warp-Pool"}]' "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
                     echo "MIXED=$mixed_port" >> /etc/hammer-sb/ports.conf
                     systemctl reload hammer-sb 2>/dev/null
                     sleep 1
