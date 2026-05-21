@@ -20,10 +20,30 @@ extract_params() {
     p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
     pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null || jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || echo "")
     if [[ -z "$pbk" ]]; then
-        # 从 private_key 推导 public_key
+        # 从 private_key 推导 public_key (X25519)
         local priv=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.private_key' "$SB_CONF" 2>/dev/null)
         if [[ -n "$priv" ]]; then
-            pbk=$($SB_BINARY_PATH generate reality-keypair 2>/dev/null | jq -r '.public_key // empty' 2>/dev/null || echo "")
+            # 尝试 wg pubkey (WireGuard 工具，X25519 兼容)
+            pbk=$(echo "$priv" | wg pubkey 2>/dev/null || echo "")
+            # 备选: python3 推导
+            if [[ -z "$pbk" ]]; then
+                pbk=$(python3 -c "
+import base64, hashlib
+try:
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    raw = base64.b64decode('$priv')
+    pk = X25519PrivateKey.from_private_bytes(raw)
+    pub = pk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    print(base64.b64encode(pub).decode())
+except:
+    print('')
+" 2>/dev/null || echo "")
+            fi
+            # 保存推导结果
+            if [[ -n "$pbk" ]]; then
+                echo "$pbk" > "$SB_CONFIG_DIR/reality_pub.key"
+            fi
         fi
     fi
     sid=$(cat "$SB_CONFIG_DIR/reality_sid.key" 2>/dev/null || jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.short_id[0] // empty' "$SB_CONF" 2>/dev/null || echo "ab12cd34")
