@@ -118,10 +118,10 @@ EOF
        '. += [{type:"anytls",tag:"in-an",listen:"::",listen_port:($port|tonumber),users:[{name:"user",password:$uuid}],tls:{enabled:true,server_name:"www.bing.com",certificate_path:"/etc/hammer-sb/cert.pem",key_path:"/etc/hammer-sb/key.pem"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
-    # 本地混合代理 (仅监听 127.0.0.1，用于 WARP 出口 IP 检测)
+    # 本地混合代理 (用于 WARP 出口 IP 检测，监听所有接口)
     local mixed_port=$(shuf -i 20000-30000 -n 1)
     jq --arg port "$mixed_port" \
-       '. += [{type:"mixed",tag:"in-mixed",listen:"127.0.0.1",listen_port:($port|tonumber)}]' \
+       '. += [{type:"mixed",tag:"in-mixed",listen:"::",listen_port:($port|tonumber)}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
     echo "MIXED=$mixed_port" >> "$PORTS_CONF"
 
@@ -133,6 +133,10 @@ EOF
 
     # 5 协议入站 → direct (WARP 池添加后会改为 Warp-Pool)
     jq '. += [{inbound:["in-vl","in-vm","in-hy","in-tc","in-an"],outbound:"direct"}]' \
+       "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
+
+    # mixed 入站 → direct (WARP 池添加后会改为 Warp-Pool)
+    jq '. += [{inbound:["in-mixed"],outbound:"direct"}]' \
        "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
 
     # DNS sniff
@@ -303,8 +307,10 @@ update_config_with_warp() {
        '.outbounds += [{type:"selector",tag:"Warp-Pool",outbounds:$pts}]' \
        "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
 
-    # 5. 更新路由: 5 协议入站 → Warp-Pool
+    # 5. 更新路由: 5 协议入站 + mixed → Warp-Pool
     jq '(.route.rules[] | select(.inbound == ["in-vl","in-vm","in-hy","in-tc","in-an"])).outbound = "Warp-Pool"' \
+       "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    jq '(.route.rules[] | select(.inbound == ["in-mixed"])).outbound = "Warp-Pool"' \
        "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
 
     # 6. 域名分流规则 → Warp-Pool

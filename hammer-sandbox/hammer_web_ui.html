@@ -222,7 +222,7 @@ function toast(msg, dur=2500) {
   setTimeout(() => t.style.display = 'none', dur);
 }
 
-function actionBase() { return 'http://' + window.location.hostname + ':9092'; }
+function actionBase() { return ''; }
 
 function actUrl(type, params) {
   let u = actionBase() + '/action?type=' + type;

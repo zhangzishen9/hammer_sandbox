@@ -70,7 +70,7 @@ show_status() {
             if systemctl is-active --quiet hammer-sb 2>/dev/null; then
                 local mixed_port=$(grep '^MIXED=' /etc/hammer-sb/ports.conf 2>/dev/null | cut -d= -f2)
                 if [[ -n "$mixed_port" ]]; then
-                    warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port icanhazip.com 2>/dev/null || echo "")
+                    warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -oP 'ip=\K[0-9.]+')
                 fi
             fi
             local warp_ip_info=""
@@ -276,8 +276,8 @@ menu_warp() {
             4) # 查看出口 IP
                local mixed_port=$(grep '^MIXED=' /etc/hammer-sb/ports.conf 2>/dev/null | cut -d= -f2)
                if [[ -n "$mixed_port" ]] && systemctl is-active --quiet hammer-sb 2>/dev/null; then
-                   local exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port icanhazip.com 2>/dev/null || echo "检测失败")
-                   echo -e "WARP出口IP: ${green}${exit_ip}${plain}"
+                   local exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -oP 'ip=\K[0-9.]+')
+                   echo -e "WARP出口IP: ${green}${exit_ip:-检测失败}${plain}"
                    # Netflix 解锁检测
                    local nf=$(curl -s4m3 -x http://127.0.0.1:$mixed_port https://www.netflix.com/title/80018499 2>/dev/null | head -1)
                    if [[ -n "$nf" ]]; then

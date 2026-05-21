@@ -3,6 +3,9 @@
 # 由 busybox httpd 调用，处理协议切换、WARP旋转等操作
 
 echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo "Access-Control-Allow-Methods: GET, POST, OPTIONS"
+echo "Access-Control-Allow-Headers: Content-Type, Authorization"
 echo ""
 
 read -r QUERY_STRING
