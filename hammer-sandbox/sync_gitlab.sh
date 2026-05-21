@@ -25,28 +25,35 @@ extract_params() {
         if [[ -n "$priv" ]]; then
             # 尝试 wg pubkey (WireGuard 工具，X25519 兼容)
             pbk=$(echo "$priv" | wg pubkey 2>/dev/null || echo "")
-            # 备选: python3 推导
+            # 备选: python3 推导 (通过环境变量传递 private_key)
             if [[ -z "$pbk" ]]; then
-                pbk=$(python3 -c "
-import base64, hashlib
+                pbk=$(HAMMER_PRIV="$priv" python3 -c '
+import base64, os
 try:
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-    raw = base64.b64decode('$priv')
+    raw = base64.b64decode(os.environ["HAMMER_PRIV"])
     pk = X25519PrivateKey.from_private_bytes(raw)
     pub = pk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     print(base64.b64encode(pub).decode())
-except:
-    print('')
-" 2>/dev/null || echo "")
+except Exception as e:
+    print("")
+' 2>/dev/null || echo "")
             fi
             # 保存推导结果
             if [[ -n "$pbk" ]]; then
                 echo "$pbk" > "$SB_CONFIG_DIR/reality_pub.key"
+                log_info "已从 private_key 推导并保存 public_key"
+            else
+                log_error "无法推导 public_key，请安装 wireguard-tools 或 python3-cryptography"
             fi
         fi
     fi
     sid=$(cat "$SB_CONFIG_DIR/reality_sid.key" 2>/dev/null || jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.short_id[0] // empty' "$SB_CONF" 2>/dev/null || echo "ab12cd34")
+    # 持久化 sid
+    if [[ -n "$sid" && "$sid" != "ab12cd34" && ! -f "$SB_CONFIG_DIR/reality_sid.key" ]]; then
+        echo "$sid" > "$SB_CONFIG_DIR/reality_sid.key"
+    fi
     ip=$(curl -s4m5 icanhazip.com)
     # 客户端使用映射地址和映射端口
     c_ip=$(get_client_addr)
