@@ -41,7 +41,7 @@ get_vps_info() {
 check_versions() {
     # 1. 大锤脚本版本
     local_script_ver="v1.2.0"
-    remote_script_ver=$(curl -s4m3 "https://raw.githubusercontent.com/zhangzishen9/dashui-sandbox/main/version.txt" | head -n 1 || echo "$local_script_ver")
+    remote_script_ver=$(curl -s4m3 "https://raw.githubusercontent.com/zhangzishen9/hammer_sandbox/main/hammer-sandbox/version.txt" | head -n 1 || echo "$local_script_ver")
 
     # 2. Sing-Box 内核版本
     if [[ -f "$SB_BINARY_PATH" ]]; then

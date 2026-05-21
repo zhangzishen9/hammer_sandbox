@@ -27,7 +27,7 @@ echo -e "${yellow}正在准备安装目录...${plain}"
 mkdir -p "$INSTALL_PATH"
 
 # 逻辑：下载所有核心脚本文件
-BASE_URL="https://raw.githubusercontent.com/zhangzishen9/dashui-sandbox/main"
+BASE_URL="https://raw.githubusercontent.com/zhangzishen9/hammer_sandbox/main/hammer-sandbox"
 scripts=("menu.sh" "core.sh" "install_sb.sh" "config_gen.sh" "warp_pool.sh" "warp_rotate.sh" "re-assemble.sh" "sync_gitlab.sh" "protocol_manager.sh" "hammer_bench.sh" "hammer_web_actiond.sh" "hammer_web_cgi.sh" "hammer_web_state.sh")
 html_files=("hammer_web_ui.html")
 

@@ -30,7 +30,7 @@
 
 ```bash
 # 建议在 root 用户下执行
-bash <(wget -qO- https://raw.githubusercontent.com/zhangzishen9/dashui-sandbox/main/install.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/zhangzishen9/hammer_sandbox/main/hammer-sandbox/install.sh)
 ```
 
 > **快捷启动提示**: 安装完成后，在任何路径输入 `sb` 或 `dc` (大锤) 即可弹出看板。
