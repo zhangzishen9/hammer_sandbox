@@ -10,7 +10,7 @@ WARP_POOL_CONF="/etc/hammer-sb/warp_pool.json"
 # 真正的 Cloudflare 账号注册函数 (Production API)
 register_warp_account() {
     # 1. 生成客户端密钥对 (Generate Client Keypair)
-    local kp=$($SB_BINARY_PATH generate keypair 2>/dev/null)
+    local kp=$($SB_BINARY_PATH generate wg-keypair 2>/dev/null || $SB_BINARY_PATH generate keypair 2>/dev/null)
     if echo "$kp" | jq -e . >/dev/null 2>&1; then
         priv_key=$(echo "$kp" | jq -r '.private_key // .privateKey // empty')
         pub_key=$(echo "$kp" | jq -r '.public_key // .publicKey // empty')
