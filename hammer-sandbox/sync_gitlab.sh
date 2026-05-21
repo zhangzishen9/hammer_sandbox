@@ -428,12 +428,17 @@ sync_to_gitlab() {
     fi
 
     # 更新文件并推送 (对标 yg: git rm → git add → commit → push)
+    # 先 touch 确保文件时间戳更新，让 git 检测到变化
+    touch hammer_singbox_client.json hammer_clash.yaml hammer_base64.txt
     git rm --cached hammer_singbox_client.json hammer_clash.yaml hammer_base64.txt >/dev/null 2>&1
     git add hammer_singbox_client.json hammer_clash.yaml hammer_base64.txt >/dev/null 2>&1
-    git commit -m "commit_add_$(date +"%F %T")" >/dev/null 2>&1
+    # 如果没有变化也强制 commit (用 --allow-empty)
+    git diff --cached --quiet && git commit --allow-empty -m "commit_refresh_$(date +"%F %T")" >/dev/null 2>&1 || git commit -m "commit_add_$(date +"%F %T")" >/dev/null 2>&1
 
     # 推送 (token 在 URL 中，GIT_TERMINAL_PROMPT=0 防止交互)
-    GIT_TERMINAL_PROMPT=0 git push -f origin "main${gitlab_ml}" 2>&1 || {
+    local push_branch="${BRANCH:-main}"
+    log_info "正在推送分支 ${push_branch}..."
+    GIT_TERMINAL_PROMPT=0 git push -f origin "main:${push_branch}" 2>&1 || {
         if command -v expect &>/dev/null; then
             bash "$SB_CONFIG_DIR/gitpush.sh" >/dev/null 2>&1
         else
