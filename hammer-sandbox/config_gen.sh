@@ -78,13 +78,12 @@ $inbounds_json
   "outbounds": [
     { "type": "direct", "tag": "direct" },
     { "type": "block", "tag": "block" },
-    { "type": "dns", "tag": "dns-out" },
     { "type": "selector", "tag": "Warp-Pool", "outbounds": [$pool_tags] }
   ],
   "route": {
     "rules": [
       { "inbound": ["in-vl","in-vm","in-hy","in-tc","in-an"], "outbound": "Warp-Pool" },
-      { "protocol": "dns", "outbound": "dns-out" },
+      { "protocol": "dns", "action": "sniff" },
       { "geosite": "cn", "geoip": "cn", "outbound": "direct" }
     ],
     "final": "direct",
