@@ -10,10 +10,10 @@ SB_CONFIG_DIR="/etc/hammer-sb"
 
 # 获取最新版本号 (Fetch Latest Version from GitHub)
 get_latest_version() {
-    log_info "正在从 GitHub 获取最新的 Sing-Box 版本..."
+    log_info "正在从 GitHub 获取最新的 Sing-Box 版本..." >&2
     latest_version=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name | sed 's/v//')
     if [[ -z "$latest_version" ]]; then
-        log_error "获取版本失败，请检查网络连接。"
+        log_error "获取版本失败，请检查网络连接。" >&2
         exit 1
     fi
     echo "$latest_version"
