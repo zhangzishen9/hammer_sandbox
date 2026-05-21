@@ -3,7 +3,10 @@
 # [大锤sand-box] 终极运维控制中心
 # 对标 yg 脚本形态，支持二级开关与快捷启动
 
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || readlink "$0" 2>/dev/null || echo "$0")")" && pwd)"
+if [[ ! -f "$SCRIPT_DIR/core.sh" ]]; then
+    SCRIPT_DIR="/root/大锤sand-box"
+fi
 cd "$SCRIPT_DIR"
 
 source ./core.sh
