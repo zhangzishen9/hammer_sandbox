@@ -76,8 +76,12 @@ show_menu() {
             [[ "$(grep '^TC=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && tc_st="OFF"
             [[ "$(grep '^AN=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && an_st="OFF"
         fi
-        echo -e "协议: VL:${vl_st}(:${p_vl:-N/A}) VM:${vm_st}(:${p_vm:-N/A}) HY:${hy_st}(:${p_hy:-N/A}) TC:${tc_st}(:${p_tc:-N/A}) AN:${an_st}(:${p_an:-N/A})"
-        [[ -n "$p_wp" ]] && echo -e "WARP直连端口: ${yellow}${p_wp}${plain}"
+        echo -e "  Vless-Reality: ${yellow}${vl_st}  端口:${p_vl:-N/A}${plain}"
+        echo -e "  Vmess-WS:      ${yellow}${vm_st}  端口:${p_vm:-N/A}${plain}"
+        echo -e "  Hysteria2:     ${yellow}${hy_st}  端口:${p_hy:-N/A}${plain}"
+        echo -e "  Tuic v5:       ${yellow}${tc_st}  端口:${p_tc:-N/A}${plain}"
+        echo -e "  AnyTLS:        ${yellow}${an_st}  端口:${p_an:-N/A}${plain}"
+        [[ -n "$p_wp" ]] && echo -e "  WARP直连端口:  ${yellow}${p_wp}${plain}"
     fi
     echo -e "流量配额: ${yellow}${traffic_total:-N/A}${plain}  |  已用: ${red}${traffic_used:-N/A}${plain} (${yellow}${traffic_pct:-0%}${plain})  |  剩余: ${green}${traffic_remain:-N/A}${plain}"
     echo -e "重置周期: 每月 ${green}${traffic_reset_day:-1号}${plain}  |  上行: ${yellow}${traffic_up:-N/A}${plain}  |  下行: ${green}${traffic_down:-N/A}${plain}"
