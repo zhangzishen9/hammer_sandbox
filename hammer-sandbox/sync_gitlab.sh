@@ -12,12 +12,12 @@ GITLAB_CONF="$SB_CONFIG_DIR/gitlab.conf"
 
 # 获取动态运行参数
 extract_params() {
-    uuid=$(jq -r '.inbounds[] | select(.type=="vless") | .users[0].uuid' "$SB_CONF" 2>/dev/null || echo "")
-    p_vl=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
-    p_vm=$(jq -r '.inbounds[] | select(.tag=="in-vm") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
-    p_hy=$(jq -r '.inbounds[] | select(.tag=="in-hy") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
-    p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
-    p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
+    uuid=$(jq -r '.inbounds[] | select(.type=="vless") | .users[0].uuid' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
+    p_vl=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
+    p_vm=$(jq -r '.inbounds[] | select(.tag=="in-vm") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
+    p_hy=$(jq -r '.inbounds[] | select(.tag=="in-hy") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
+    p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
+    p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     # public_key: 优先从 config.json 读取 (新配置已写入)，其次从持久化文件，最后推导
     pbk=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || echo "")
     if [[ -z "$pbk" ]]; then
