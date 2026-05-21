@@ -189,8 +189,8 @@ update_config_with_warp() {
         return 1
     fi
 
-    # 2. 清理旧的 WARP 相关配置 (outbounds + inbounds + rules)
-    jq 'del(.outbounds[] | select(.tag | startswith("warp-pool-") or startswith("warp-wg-") or .tag == "Warp-Pool")) | del(.inbounds[] | select(.tag | startswith("in-warp"))) | del(.route.rules[] | select(.inbound? // [] | any(startswith("in-warp")))) | del(.route.rules[] | select(.outbound? == "Warp-Pool" and .inbound? == ["in-vl","in-vm","in-hy","in-tc","in-an"]))' \
+    # 2. 清理旧的 WARP 相关配置 (endpoints + outbounds + inbounds + rules)
+    jq 'del(.endpoints[]? | select(.tag | startswith("warp-pool-") or startswith("warp-wg-"))) | del(.outbounds[] | select(.tag | startswith("warp-pool-") or startswith("warp-wg-") or .tag == "Warp-Pool")) | del(.inbounds[] | select(.tag | startswith("in-warp"))) | del(.route.rules[] | select(.inbound? // [] | any(startswith("in-warp")))) | del(.route.rules[] | select(.outbound? == "Warp-Pool" and .inbound? == ["in-vl","in-vm","in-hy","in-tc","in-an"]))' \
        "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
 
     # 3. 添加 WARP 直连 VLESS 入站 (端口从 61001 开始)
@@ -205,12 +205,28 @@ update_config_with_warp() {
            "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
     done
 
-    # 3. 合并 WARP outbounds
-    local pool_outbounds=$(jq -c '.' /etc/hammer-sb/warp_pool.json)
-    jq --slurpfile pool /etc/hammer-sb/warp_pool.json \
-       '.outbounds += $pool[0]' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    # 4. 合并 WARP endpoints (WireGuard 放 endpoints，Psiphon 放 outbounds)
+    # 分离: WireGuard 类型 → endpoints, 其他 → outbounds
+    local wg_endpoints=$(jq -c '[.[] | select(.type=="wireguard")]' /etc/hammer-sb/warp_pool.json)
+    local other_outbounds=$(jq -c '[.[] | select(.type!="wireguard")]' /etc/hammer-sb/warp_pool.json)
 
-    # 4. 添加 Warp-Pool selector outbound
+    # 添加 endpoints (如果不存在则创建数组)
+    if jq -e '.endpoints' "$config" >/dev/null 2>&1; then
+        jq --argjson eps "$wg_endpoints" \
+           '.endpoints += $eps' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    else
+        jq --argjson eps "$wg_endpoints" \
+           '. + {endpoints:$eps}' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    fi
+
+    # 添加 Psiphon outbounds (如果有)
+    local other_len=$(echo "$other_outbounds" | jq 'length')
+    if [[ "$other_len" -gt 0 ]]; then
+        jq --argjson obs "$other_outbounds" \
+           '.outbounds += $obs' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    fi
+
+    # 5. 添加 Warp-Pool selector outbound
     local pool_tags=$(for i in $(seq 1 $pool_size); do echo "\"warp-pool-$i\""; done | paste -sd, -)
     jq --argjson pts "[${pool_tags}]" \
        '.outbounds += [{type:"selector",tag:"Warp-Pool",outbounds:$pts}]' \
