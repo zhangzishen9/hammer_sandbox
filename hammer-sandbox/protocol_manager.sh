@@ -45,11 +45,11 @@ manage_protocols() {
         
         read -p "请输入对应的编号切换状态: " pchoice
         case $pchoice in
-            1) [[ $vl_s == 1 ]] && sed -i '' 's/VL=1/VL=0/' "$STATUS_FILE" || sed -i '' 's/VL=0/VL=1/' "$STATUS_FILE" ;;
-            2) [[ $vm_s == 1 ]] && sed -i '' 's/VM=1/VM=0/' "$STATUS_FILE" || sed -i '' 's/VM=0/VM=1/' "$STATUS_FILE" ;;
-            3) [[ $hy_s == 1 ]] && sed -i '' 's/HY=1/HY=0/' "$STATUS_FILE" || sed -i '' 's/HY=0/HY=1/' "$STATUS_FILE" ;;
-            4) [[ $tc_s == 1 ]] && sed -i '' 's/TC=1/TC=0/' "$STATUS_FILE" || sed -i '' 's/TC=0/TC=1/' "$STATUS_FILE" ;;
-            5) [[ $an_s == 1 ]] && sed -i '' 's/AN=1/AN=0/' "$STATUS_FILE" || sed -i '' 's/AN=0/AN=1/' "$STATUS_FILE" ;;
+            1) [[ $vl_s == 1 ]] && sed -i 's/VL=1/VL=0/' "$STATUS_FILE" || sed -i 's/VL=0/VL=1/' "$STATUS_FILE" ;;
+            2) [[ $vm_s == 1 ]] && sed -i 's/VM=1/VM=0/' "$STATUS_FILE" || sed -i 's/VM=0/VM=1/' "$STATUS_FILE" ;;
+            3) [[ $hy_s == 1 ]] && sed -i 's/HY=1/HY=0/' "$STATUS_FILE" || sed -i 's/HY=0/HY=1/' "$STATUS_FILE" ;;
+            4) [[ $tc_s == 1 ]] && sed -i 's/TC=1/TC=0/' "$STATUS_FILE" || sed -i 's/TC=0/TC=1/' "$STATUS_FILE" ;;
+            5) [[ $an_s == 1 ]] && sed -i 's/AN=1/AN=0/' "$STATUS_FILE" || sed -i 's/AN=0/AN=1/' "$STATUS_FILE" ;;
             0) break ;;
         esac
         

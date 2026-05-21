@@ -33,3 +33,14 @@ setup_cron() {
     log_info "正在设置每 $minutes 分钟自动轮换一个 WARP IP..."
     (crontab -l 2>/dev/null | grep -v "warp_rotate.sh"; echo "*/$minutes * * * * $(pwd)/warp_rotate.sh >> /var/log/hammer-sb-rotate.log 2>&1") | crontab -
 }
+
+# 直接执行时自动组装并重载
+case "$1" in
+    --cron)
+        shift
+        setup_cron "$1"
+        ;;
+    *)
+        assemble_and_reload
+        ;;
+esac
