@@ -98,8 +98,8 @@ EOF
     # --- 构建 inbounds: 5 协议 ---
     jq -n '[]' > "$tmp_inbounds"
 
-    jq --arg port "$p_vl" --arg uuid "$uuid" --arg priv "$priv_key" --arg pub "$pub_key" --arg sid "$short_id" \
-       '. += [{type:"vless",tag:"in-vl",listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,public_key:$pub,short_id:[$sid]}}}]' \
+    jq --arg port "$p_vl" --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$short_id" \
+       '. += [{type:"vless",tag:"in-vl",listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,short_id:[$sid]}}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
     jq --arg port "$p_vm" --arg uuid "$uuid" \

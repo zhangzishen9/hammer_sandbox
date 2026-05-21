@@ -153,7 +153,7 @@ proxies:
     network: ws
     servername: www.bing.com
     ws-opts:
-      path: "$uuid-vm"
+      path: "/hammer-vm"
       headers:
         Host: www.bing.com
   - name: 大锤-Hysteria2
