@@ -41,11 +41,11 @@ show_menu() {
     echo -e "${blue}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${plain}"
     echo -e " 1. 安装/更新 内核                   2. 彻底卸载 (清理环境)"
     echo -e " ----------------------------------------------------------------------------------"
-    echo -e " 3. 五协议初始化 (全量配置)          4. [进入子菜单] 协议开关管理 (耳机开关)"
-    echo -e " 5. 变更分流域名 (WARP 托管)         6. 开启/重置 TCP BBR 加速"
-    echo -e " 7. 管理 WARP 并发池 (1-10路)        8. 触发 IP 强制旋转 (物理换IP)"
+    echo -e " 3. 五协议初始化                     4. 协议开关管理"
+    echo -e " 5. WARP 分流配置                    6. 开启/重置 TCP BBR 加速"
+    echo -e " 7. WARP 直连节点管理                8. 触发 IP 强制旋转"
     echo -e " 9. 推送全能订阅 (三合一)            10. 查看实时运行日志"
-    echo -e " 11. 设置流量配额 (总额/重置日)       12. 手动重置流量统计"
+    echo -e " 11. 设置流量配额                    12. 手动重置流量统计"
     echo -e " 13. 启动/重启 Web UI 仪表盘         14. 设置/修改 Web UI 密码"
     echo -e " 15. [VPS 体检中心] 回程/IP质量/跑分  16. 设置地址映射 (NAT/VM)"
     echo -e " ----------------------------------------------------------------------------------"
@@ -68,20 +68,32 @@ show_menu() {
         local p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port // empty' "$sb_conf" 2>/dev/null)
         local p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port // empty' "$sb_conf" 2>/dev/null)
         local p_wp=$(jq -r '[.inbounds[] | select(.tag | startswith("in-warp")) | .listen_port] | join(",")' "$sb_conf" 2>/dev/null)
-        local vl_st="ON" vm_st="ON" hy_st="ON" tc_st="ON" an_st="ON"
+        # ON=绿色, OFF=红色
+        local vl_st="${green}ON${plain}" vm_st="${green}ON${plain}" hy_st="${green}ON${plain}" tc_st="${green}ON${plain}" an_st="${green}ON${plain}"
         if [[ -f "/etc/hammer-sb/protocols.conf" ]]; then
-            [[ "$(grep '^VL=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && vl_st="OFF"
-            [[ "$(grep '^VM=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && vm_st="OFF"
-            [[ "$(grep '^HY=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && hy_st="OFF"
-            [[ "$(grep '^TC=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && tc_st="OFF"
-            [[ "$(grep '^AN=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && an_st="OFF"
+            [[ "$(grep '^VL=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && vl_st="${red}OFF${plain}"
+            [[ "$(grep '^VM=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && vm_st="${red}OFF${plain}"
+            [[ "$(grep '^HY=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && hy_st="${red}OFF${plain}"
+            [[ "$(grep '^TC=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && tc_st="${red}OFF${plain}"
+            [[ "$(grep '^AN=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && an_st="${red}OFF${plain}"
         fi
-        echo -e "  Vless-Reality: ${yellow}${vl_st}  端口:${p_vl:-N/A}${plain}"
-        echo -e "  Vmess-WS:      ${yellow}${vm_st}  端口:${p_vm:-N/A}${plain}"
-        echo -e "  Hysteria2:     ${yellow}${hy_st}  端口:${p_hy:-N/A}${plain}"
-        echo -e "  Tuic v5:       ${yellow}${tc_st}  端口:${p_tc:-N/A}${plain}"
-        echo -e "  AnyTLS:        ${yellow}${an_st}  端口:${p_an:-N/A}${plain}"
-        [[ -n "$p_wp" ]] && echo -e "  WARP直连端口:  ${yellow}${p_wp}${plain}"
+        echo -e "  Vless-Reality: ${vl_st}  端口:${yellow}${p_vl:-N/A}${plain}"
+        echo -e "  Vmess-WS:      ${vm_st}  端口:${yellow}${p_vm:-N/A}${plain}"
+        echo -e "  Hysteria2:     ${hy_st}  端口:${yellow}${p_hy:-N/A}${plain}"
+        echo -e "  Tuic v5:       ${tc_st}  端口:${yellow}${p_tc:-N/A}${plain}"
+        echo -e "  AnyTLS:        ${an_st}  端口:${yellow}${p_an:-N/A}${plain}"
+        # WARP 状态
+        local warp_domains=""
+        [[ -f "/etc/hammer-sb/warp_domains.conf" ]] && warp_domains=$(cat /etc/hammer-sb/warp_domains.conf | tr -d '\n')
+        local has_warp=$(jq -r '[.endpoints[]? | select(.type=="wireguard")] | length' "$sb_conf" 2>/dev/null || echo 0)
+        if [[ "$has_warp" -gt 0 ]]; then
+            local warp_split_st="${green}ON${plain}"
+            [[ -z "$warp_domains" ]] && warp_split_st="${red}OFF${plain}"
+            echo -e "  WARP分流:      ${warp_split_st}  域名:${yellow}${warp_domains:-未配置}${plain}"
+            echo -e "  WARP直连:      ${green}$has_warp 路${plain}  端口:${yellow}${p_wp}${plain}"
+        else
+            echo -e "  WARP:          ${red}未创建${plain} (通过选项5/7配置)"
+        fi
     fi
     echo -e "流量配额: ${yellow}${traffic_total:-N/A}${plain}  |  已用: ${red}${traffic_used:-N/A}${plain} (${yellow}${traffic_pct:-0%}${plain})  |  剩余: ${green}${traffic_remain:-N/A}${plain}"
     echo -e "重置周期: 每月 ${green}${traffic_reset_day:-1号}${plain}  |  上行: ${yellow}${traffic_up:-N/A}${plain}  |  下行: ${green}${traffic_down:-N/A}${plain}"
@@ -98,16 +110,43 @@ main() {
             2) uninstall_sb; read -p "完成，按回车键继续..." ;;
             3) generate_config; read -p "完成，按回车键继续..." ;;
             4) manage_protocols ;;
-            5) read -p "输入新的 WARP 分流域名 (如 google.com, 留空取消): " split_domain
-               if [[ -n "$split_domain" ]]; then
-                   # 替换 geosite-cn rule_set 规则为指定域名
-                   jq --arg d "$split_domain" '(.route.rules[] | select(.rule_set // [] | contains(["geosite-cn"]))) |= {"domain": [$d], "outbound": "direct"}' /etc/hammer-sb/config.json > /tmp/hammer-sb-tmp.json && mv /tmp/hammer-sb-tmp.json /etc/hammer-sb/config.json
-                   systemctl reload hammer-sb 2>/dev/null || systemctl start hammer-sb
-                   log_info "分流域名已变更为 $split_domain，已重载。"
+            5) # WARP 分流配置
+               local warp_domains=""
+               [[ -f "/etc/hammer-sb/warp_domains.conf" ]] && warp_domains=$(cat /etc/hammer-sb/warp_domains.conf | tr -d '\n')
+               echo -e "当前分流域名: ${yellow}${warp_domains:-未配置}${plain}"
+               echo -e "留空则全部流量走WARP，配置域名后仅指定域名走WARP其余直连"
+               read -p "输入分流域名 (多个逗号分隔, 留空取消): " new_domains
+               if [[ -n "$new_domains" ]]; then
+                   echo "$new_domains" > /etc/hammer-sb/warp_domains.conf
+                   # 更新路由规则
+                   local config="/etc/hammer-sb/config.json"
+                   if [[ -f "$config" ]]; then
+                       # 先删除旧的域名规则
+                       jq 'del(.route.rules[] | select(.domain?))' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+                       # 添加新域名规则
+                       local domain_json=$(echo "$new_domains" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -sc .)
+                       local has_warp=$(jq -r '[.endpoints[]? | select(.type=="wireguard")] | length' "$config" 2>/dev/null || echo 0)
+                       local ob="direct"
+                       [[ "$has_warp" -gt 0 ]] && ob="Warp-Pool"
+                       jq --argjson domains "$domain_json" --arg ob "$ob" \
+                          '.route.rules += [{domain:$domains,outbound:$ob}]' \
+                          "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+                       # 如果有 WARP，5协议入站也改为 Warp-Pool
+                       if [[ "$has_warp" -gt 0 ]]; then
+                           jq '(.route.rules[] | select(.inbound == ["in-vl","in-vm","in-hy","in-tc","in-an"])).outbound = "Warp-Pool"' \
+                              "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+                       fi
+                       systemctl reload hammer-sb 2>/dev/null || systemctl start hammer-sb
+                       log_info "分流域名已更新为: $new_domains，已重载。"
+                   fi
                fi
                read -p "按回车键继续..." ;;
             6) enable_bbr; read -p "完成，按回车键继续..." ;;
-            7) read -p "输入WARP路数 (1-10, 默认3): " ps; ps=${ps:-3}; read -p "Psiphon指定国家 (如 US/JP/SG, 留空为原生WARP): " psc; source ./config_gen.sh; update_config_with_warp $ps "$psc"; read -p "完成..." ;;
+            7) # WARP 直连节点管理
+               read -p "输入WARP路数 (1-10, 默认3): " ps; ps=${ps:-3}
+               read -p "Psiphon指定国家 (如 US/JP/SG, 留空为原生WARP): " psc
+               source ./config_gen.sh; update_config_with_warp $ps "$psc"
+               read -p "完成..." ;;
             8) bash ./warp_rotate.sh; read -p "已旋转..." ;;
             9) sync_to_gitlab; read -p "完成..." ;;
             10) journalctl -u hammer-sb -f -n 20 ;;

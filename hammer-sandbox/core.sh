@@ -65,7 +65,7 @@ ADDR_MAP_CONF="/etc/hammer-sb/addr_map.conf"
 # 获取客户端应使用的地址 (映射地址 > 公网IP)
 get_client_addr() {
     if [[ -f "$ADDR_MAP_CONF" ]]; then
-        local map_addr=$(grep '^MAP_ADDR=' "$ADDR_MAP_CONF" | cut -d= -f2-)
+        local map_addr=$(grep '^MAP_ADDR=' "$ADDR_MAP_CONF" | cut -d= -f2- | sed 's#^https\?://##' | sed 's#/$##')
         if [[ -n "$map_addr" ]]; then
             echo "$map_addr"
             return
