@@ -58,7 +58,11 @@ show_status() {
             [[ "$(grep '^TC=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && tc_st="${red}OFF${plain}"
             [[ "$(grep '^AN=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && an_st="${red}OFF${plain}"
         fi
-        echo -e "  VL: ${vl_st}(:${p_vl:-N/A})  VM: ${vm_st}(:${p_vm:-N/A})  HY: ${hy_st}(:${p_hy:-N/A})  TC: ${tc_st}(:${p_tc:-N/A})  AN: ${an_st}(:${p_an:-N/A})"
+        echo -e "  Vless-Reality: ${vl_st}  端口:${yellow}${p_vl:-N/A}${plain}"
+        echo -e "  Vmess-WS:      ${vm_st}  端口:${yellow}${p_vm:-N/A}${plain}"
+        echo -e "  Hysteria2:     ${hy_st}  端口:${yellow}${p_hy:-N/A}${plain}"
+        echo -e "  Tuic v5:       ${tc_st}  端口:${yellow}${p_tc:-N/A}${plain}"
+        echo -e "  AnyTLS:        ${an_st}  端口:${yellow}${p_an:-N/A}${plain}"
         # WARP 状态
         local warp_domains=""
         [[ -f "/etc/hammer-sb/warp_domains.conf" ]] && warp_domains=$(cat /etc/hammer-sb/warp_domains.conf | tr -d '\n')
@@ -75,9 +79,10 @@ show_status() {
             fi
             local warp_ip_info=""
             [[ -n "$warp_exit_ip" ]] && warp_ip_info="  出口IP:${green}${warp_exit_ip}${plain}"
-            echo -e "  WARP分流: ${warp_split_st}  WARP直连: ${green}${has_warp}路${plain}(:${p_wp})${warp_ip_info}"
+            echo -e "  WARP分流:      ${warp_split_st}  域名:${yellow}${warp_domains:-未配置}${plain}"
+            echo -e "  WARP直连:      ${green}${has_warp}路${plain}  端口:${yellow}${p_wp}${plain}${warp_ip_info}"
         else
-            echo -e "  WARP: ${red}未创建${plain}"
+            echo -e "  WARP:          ${red}未创建${plain}"
         fi
     fi
     echo -e "流量: ${yellow}${traffic_used:-N/A}${plain}/${yellow}${traffic_total:-N/A}${plain} (${yellow}${traffic_pct:-0%}${plain})  剩余: ${green}${traffic_remain:-N/A}${plain}  重置: 每月${green}${traffic_reset_day:-1号}${plain}"
