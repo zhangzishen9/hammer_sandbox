@@ -19,9 +19,10 @@ extract_params() {
     p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     # public_key: 优先从 config.json 读取 (新配置已写入)，其次从持久化文件，最后推导
-    pbk=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || echo "")
+    # 注意: sing-box 用 base64url 格式(-和_)，Clash 也需要 base64url
+    pbk=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     if [[ -z "$pbk" ]]; then
-        pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null || echo "")
+        pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null | head -1 | tr -d '[:space:]')
     fi
     if [[ -z "$pbk" ]]; then
         # 从 private_key 推导 public_key (X25519)
@@ -36,13 +37,15 @@ import base64, os
 try:
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-    # sing-box 使用 base64url 格式 (含 - 和 _)，需转为标准 base64
+    # sing-box 使用 base64url 格式 (含 - 和 _)，需转为标准 base64 解码
     key = os.environ["HAMMER_PRIV"].replace("-", "+").replace("_", "/")
     key += "=" * (-len(key) % 4)
     raw = base64.b64decode(key)
     pk = X25519PrivateKey.from_private_bytes(raw)
     pub = pk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-    print(base64.b64encode(pub).decode())
+    # 输出也用 base64url 格式 (sing-box/Clash 都用这个格式)
+    result = base64.b64encode(pub).decode().replace("+", "-").replace("/", "_").rstrip("=")
+    print(result)
 except Exception as e:
     print("")
 ' 2>/dev/null || echo "")
