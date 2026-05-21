@@ -85,6 +85,40 @@ gen_clash() {
 
     # 先写 5 协议
     cat > "$SB_CONFIG_DIR/hammer_clash.yaml" <<EOF
+port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+unified-delay: true
+dns:
+  enable: true
+  listen: "0.0.0.0:1053"
+  ipv6: true
+  prefer-h3: false
+  respect-rules: true
+  use-system-hosts: false
+  cache-algorithm: "arc"
+  enhanced-mode: "fake-ip"
+  fake-ip-range: "198.18.0.1/16"
+  fake-ip-filter:
+    - "+.lan"
+    - "+.local"
+    - "+.msftconnecttest.com"
+    - "+.msftncsi.com"
+    - "+.in-addr.arpa"
+    - "+.ip6.arpa"
+  default-nameserver: ["223.5.5.5", "1.2.4.8"]
+  nameserver:
+    - "https://1.1.1.1/dns-query"
+    - "https://8.8.4.4/dns-query"
+  proxy-server-nameserver:
+    - "https://223.5.5.5/dns-query"
+    - "https://doh.pub/dns-query"
+  nameserver-policy:
+    "geosite:private,cn":
+      - "https://223.5.5.5/dns-query"
+      - "https://doh.pub/dns-query"
+
 proxies:
   - name: 大锤-Vless
     type: vless
