@@ -3,6 +3,9 @@
 # [大锤sand-box] 终极运维控制中心
 # 对标 yg 脚本形态，支持二级开关与快捷启动
 
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+cd "$SCRIPT_DIR"
+
 source ./core.sh
 source ./install_sb.sh
 source ./config_gen.sh
