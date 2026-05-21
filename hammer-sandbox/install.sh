@@ -19,7 +19,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # 确保基础工具存在
-apt update -y && apt install -y wget curl git jq openssl python3 bc
+apt update -y && apt install -y wget curl git jq openssl python3 python3-pip python3-cryptography bc
 
 # 2. 拉取项目文件 (此处假设托管路径，用户可自行更新)
 INSTALL_PATH="/root/hammer-sandbox"
