@@ -32,7 +32,7 @@ register_warp_account() {
     token=$(echo "$response" | jq -r .token)
 
     if [[ "$id" == "null" || -z "$id" ]]; then
-        log_error "Cloudflare 注册失败，API 响应: $response"
+        log_error "Cloudflare 注册失败，API 响应: $response" >&2
         return 1
     fi
 
