@@ -86,6 +86,13 @@ show_status() {
                     systemctl reload hammer-sb 2>/dev/null
                     sleep 1
                 fi
+                # 自动补丁: 给现有配置添加 public_key
+                local has_pub=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$sb_conf" 2>/dev/null)
+                if [[ -z "$has_pub" && -f /etc/hammer-sb/reality_pub.key ]]; then
+                    local saved_pub=$(cat /etc/hammer-sb/reality_pub.key)
+                    jq --arg pub "$saved_pub" '(.inbounds[] | select(.tag=="in-vl")).tls.reality.public_key = $pub' "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
+                    systemctl reload hammer-sb 2>/dev/null
+                fi
                 warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -oP 'ip=\K[0-9.]+')
             fi
             local warp_ip_info=""

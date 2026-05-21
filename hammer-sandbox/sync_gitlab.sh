@@ -18,12 +18,16 @@ extract_params() {
     p_hy=$(jq -r '.inbounds[] | select(.tag=="in-hy") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
     p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
     p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null || echo "")
-    pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null || jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || echo "")
+    # public_key: 优先从 config.json 读取 (新配置已写入)，其次从持久化文件，最后推导
+    pbk=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null || echo "")
+    if [[ -z "$pbk" ]]; then
+        pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null || echo "")
+    fi
     if [[ -z "$pbk" ]]; then
         # 从 private_key 推导 public_key (X25519)
         local priv=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.private_key' "$SB_CONF" 2>/dev/null)
         if [[ -n "$priv" ]]; then
-            # 尝试 wg pubkey (WireGuard 工具，X25519 兼容)
+            # 尝试 wg pubkey
             pbk=$(echo "$priv" | wg pubkey 2>/dev/null || echo "")
             # 备选: python3 推导 (通过环境变量传递 private_key)
             if [[ -z "$pbk" ]]; then
@@ -40,9 +44,13 @@ except Exception as e:
     print("")
 ' 2>/dev/null || echo "")
             fi
+            # 备选: sing-box generate reality-keypair (重新生成，但这会改变密钥)
+            # 不推荐，只在没有任何办法时使用
             # 保存推导结果
             if [[ -n "$pbk" ]]; then
                 echo "$pbk" > "$SB_CONFIG_DIR/reality_pub.key"
+                # 也写入 config.json 方便下次读取
+                jq --arg pub "$pbk" '(.inbounds[] | select(.tag=="in-vl")).tls.reality.public_key = $pub' "$SB_CONF" > "${SB_CONF}.tmp" && mv "${SB_CONF}.tmp" "$SB_CONF"
                 log_info "已从 private_key 推导并保存 public_key"
             else
                 log_error "无法推导 public_key，请安装 wireguard-tools 或 python3-cryptography"
