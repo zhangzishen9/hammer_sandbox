@@ -22,7 +22,7 @@ fi
 apt update -y && apt install -y wget curl git jq openssl python3 bc
 
 # 2. 拉取项目文件 (此处假设托管路径，用户可自行更新)
-INSTALL_PATH="/root/大锤sand-box"
+INSTALL_PATH="/root/hammer-sandbox"
 echo -e "${yellow}正在准备安装目录...${plain}"
 mkdir -p "$INSTALL_PATH"
 

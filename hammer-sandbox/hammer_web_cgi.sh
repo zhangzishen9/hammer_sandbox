@@ -25,7 +25,7 @@ case "$action" in
         fi
         ;;
     rotate)
-        SCRIPT_DIR="/root/大锤sand-box"
+        SCRIPT_DIR="/root/hammer-sandbox"
         if [[ -d "$SCRIPT_DIR" ]]; then
             cd "$SCRIPT_DIR" && bash ./warp_rotate.sh >/dev/null 2>&1 &
             echo '{"ok":true}'

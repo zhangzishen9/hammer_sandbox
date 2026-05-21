@@ -19,7 +19,7 @@ import json, os, subprocess, urllib.parse, hashlib, time, base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 SB_CONF_DIR = '/etc/hammer-sb'
-SCRIPT_DIR = '/root/大锤sand-box'
+SCRIPT_DIR = '/root/hammer-sandbox'
 PASS_FILE = '$PASS_FILE'
 
 # 简单 token 机制：sha256(password + secret + hour)

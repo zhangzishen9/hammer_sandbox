@@ -5,7 +5,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || readlink "$0" 2>/dev/null || echo "$0")")" && pwd)"
 if [[ ! -f "$SCRIPT_DIR/core.sh" ]]; then
-    SCRIPT_DIR="/root/大锤sand-box"
+    SCRIPT_DIR="/root/hammer-sandbox"
 fi
 cd "$SCRIPT_DIR"
 
