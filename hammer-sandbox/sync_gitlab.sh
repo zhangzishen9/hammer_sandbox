@@ -36,9 +36,9 @@ import base64, os
 try:
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-    # 补齐 base64 padding
-    key = os.environ["HAMMER_PRIV"]
-    key += "=" * (4 - len(key) % 4) if len(key) % 4 else ""
+    # sing-box 使用 base64url 格式 (含 - 和 _)，需转为标准 base64
+    key = os.environ["HAMMER_PRIV"].replace("-", "+").replace("_", "/")
+    key += "=" * (-len(key) % 4)
     raw = base64.b64decode(key)
     pk = X25519PrivateKey.from_private_bytes(raw)
     pub = pk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
