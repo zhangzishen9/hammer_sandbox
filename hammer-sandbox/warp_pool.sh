@@ -71,11 +71,12 @@ register_warp_account() {
 
 # 生成 N 个 WARP Endpoint 节点 (sing-box 1.13+ WireGuard Endpoint 格式)
 # WireGuard Endpoint 的 tag 可直接作为 outbound 使用
+# 注意: 标准 sing-box 不含 psiphon outbound，统一使用纯 WireGuard
 generate_warp_pool() {
     local pool_size=$1
     local country=$2
     log_info "正在申请 $pool_size 个全新的 Cloudflare 账号..."
-    [[ -n "$country" ]] && log_info "已开启 [全球通模式]：指定出口国家为 $country"
+    [[ -n "$country" ]] && log_info "已开启 [全球通模式]：指定出口国家为 $country (注: 需 psiphon 编译版才生效，当前使用原生WARP)"
 
     jq -n '[]' > "$WARP_POOL_CONF"
 
@@ -87,43 +88,20 @@ generate_warp_pool() {
         ip6=$(echo $acc_info | cut -d'|' -f2)
         res=$(echo $acc_info | cut -d'|' -f3)
 
-        if [[ -n "$country" ]]; then
-            # 链式结构: Psiphon outbound → detour 到 WireGuard endpoint
-            # WireGuard 用 endpoint 格式 (sing-box 1.13+)
-            jq --arg priv "$priv" --arg ip6 "$ip6" --argjson res "$res" --arg country "$country" \
-               --arg wg_tag "warp-wg-$i" --arg ps_tag "warp-pool-$i" --arg detour "warp-wg-$i" \
-               '. += [
-                 {
-                   type:"wireguard",
-                   tag:$wg_tag,
-                   address:["172.16.0.2/32",($ip6+"/128")],
-                   private_key:$priv,
-                   peers:[{address:"engage.cloudflareclient.com",port:2408,public_key:"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",reserved:$res,allowed_ips:["0.0.0.0/0","::/0"]}],
-                   mtu:1280
-                 },
-                 {
-                   type:"psiphon",
-                   tag:$ps_tag,
-                   server:"engage.cloudflareclient.com",
-                   detour:$detour,
-                   country:$country
-                 }
-               ]' "$WARP_POOL_CONF" > "${WARP_POOL_CONF}.tmp" && mv "${WARP_POOL_CONF}.tmp" "$WARP_POOL_CONF"
-        else
-            # 无 Psiphon: 直接用 WireGuard endpoint (tag 可直接当 outbound 用)
-            jq --arg priv "$priv" --arg ip6 "$ip6" --argjson res "$res" \
-               --arg tag "warp-pool-$i" \
-               '. += [
-                 {
-                   type:"wireguard",
-                   tag:$tag,
-                   address:["172.16.0.2/32",($ip6+"/128")],
-                   private_key:$priv,
-                   peers:[{address:"engage.cloudflareclient.com",port:2408,public_key:"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",reserved:$res,allowed_ips:["0.0.0.0/0","::/0"]}],
-                   mtu:1280
-                 }
-               ]' "$WARP_POOL_CONF" > "${WARP_POOL_CONF}.tmp" && mv "${WARP_POOL_CONF}.tmp" "$WARP_POOL_CONF"
-        fi
+        # 统一使用纯 WireGuard endpoint (tag 可直接当 outbound 用)
+        jq --arg priv "$priv" --arg ip6 "$ip6" --argjson res "$res" \
+           --arg tag "warp-pool-$i" \
+           '. += [
+             {
+               type:"wireguard",
+               tag:$tag,
+               address:["172.16.0.2/32",($ip6+"/128")],
+               private_key:$priv,
+               peers:[{address:"engage.cloudflareclient.com",port:2408,public_key:"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",reserved:$res,allowed_ips:["0.0.0.0/0","::/0"]}],
+               mtu:1280
+             }
+           ]' "$WARP_POOL_CONF" > "${WARP_POOL_CONF}.tmp" && mv "${WARP_POOL_CONF}.tmp" "$WARP_POOL_CONF"
+
         log_info "节点 warp-pool-$i 注册成功。"
     done
 }

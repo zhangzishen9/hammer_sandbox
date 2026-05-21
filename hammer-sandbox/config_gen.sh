@@ -142,6 +142,13 @@ generate_config() {
     echo -e "${blue}======================================${plain}"
     echo -e "${green}   大锤-已为您开通 5 协议     ${plain}"
     echo -e "${blue}======================================${plain}"
+    echo -e "${yellow}🚀【 Vless-Reality 】${plain}端口:${green}$c_p1${plain}  Reality域名伪装地址:${green}apple.com${plain}"
+    echo -e "${yellow}🚀【   Vmess-ws    】${plain}端口:${green}$c_p2${plain}  证书形式:TLS关闭  Argo状态:未开启"
+    echo -e "${yellow}🚀【  Hysteria-2   】${plain}端口:${green}$c_p3${plain}  证书形式:自签证书"
+    echo -e "${yellow}🚀【    Tuic-v5    】${plain}端口:${green}$c_p4${plain}  证书形式:自签证书"
+    echo -e "${yellow}🚀【    Anytls     】${plain}端口:${green}$c_p5${plain}  证书形式:自签证书"
+    echo -e "${blue}======================================${plain}"
+    echo -e "${green}--- 节点链接 ---${plain}"
     echo -e "Vless-Reality: ${yellow}vless://$uuid@$c_addr:$c_p1?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apple.com&fp=chrome&pbk=$pub_key&sid=$short_id&type=tcp#大锤-VL${plain}"
     echo -e "Vmess-WS:      ${yellow}vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"大锤-VM\",\"add\":\"$c_addr\",\"port\":\"$c_p2\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/hammer-vm\"}" | base64 | tr -d '\n')${plain}"
     echo -e "Hysteria2:     ${yellow}hysteria2://$uuid@$c_addr:$c_p3?security=tls&sni=www.bing.com#大锤-HY${plain}"
@@ -195,7 +202,22 @@ update_config_with_warp() {
     fi
 
     # 2. 清理旧的 WARP 相关配置 (endpoints + outbounds + inbounds + rules)
-    jq 'del(.endpoints[]? | select(.tag | startswith("warp-pool-") or startswith("warp-wg-"))) | del(.outbounds[] | select(.tag | startswith("warp-pool-") or startswith("warp-wg-") or .tag == "Warp-Pool")) | del(.inbounds[] | select(.tag | startswith("in-warp"))) | del(.route.rules[] | select(.inbound? // [] | any(startswith("in-warp")))) | del(.route.rules[] | select(.outbound? == "Warp-Pool" and .inbound? == ["in-vl","in-vm","in-hy","in-tc","in-an"]))' \
+    # 用分步清理避免 jq 类型错误
+    # 清理 endpoints
+    if jq -e '.endpoints' "$config" >/dev/null 2>&1; then
+        jq 'del(.endpoints[] | select(.tag | startswith("warp-pool-") or startswith("warp-wg-")))' \
+           "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    fi
+    # 清理 outbounds
+    jq 'del(.outbounds[] | select(.tag | startswith("warp-pool-") or startswith("warp-wg-") or .tag == "Warp-Pool"))' \
+       "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    # 清理 inbounds
+    jq 'del(.inbounds[] | select(.tag | startswith("in-warp")))' \
+       "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    # 清理 route rules
+    jq 'del(.route.rules[] | select((.inbound // []) | type == "array" and any(startswith("in-warp"))))' \
+       "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    jq 'del(.route.rules[] | select(.outbound == "Warp-Pool" and (.inbound // []) == ["in-vl","in-vm","in-hy","in-tc","in-an"]))' \
        "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
 
     # 3. 添加 WARP 直连 VLESS 入站 (随机端口)
@@ -210,10 +232,8 @@ update_config_with_warp() {
            "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
     done
 
-    # 4. 合并 WARP endpoints (WireGuard 放 endpoints，Psiphon 放 outbounds)
-    # 分离: WireGuard 类型 → endpoints, 其他 → outbounds
-    local wg_endpoints=$(jq -c '[.[] | select(.type=="wireguard")]' /etc/hammer-sb/warp_pool.json)
-    local other_outbounds=$(jq -c '[.[] | select(.type!="wireguard")]' /etc/hammer-sb/warp_pool.json)
+    # 4. 合并 WARP endpoints (纯 WireGuard，全部放 endpoints)
+    local wg_endpoints=$(cat /etc/hammer-sb/warp_pool.json)
 
     # 添加 endpoints (如果不存在则创建数组)
     if jq -e '.endpoints' "$config" >/dev/null 2>&1; then
@@ -222,13 +242,6 @@ update_config_with_warp() {
     else
         jq --argjson eps "$wg_endpoints" \
            '. + {endpoints:$eps}' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
-    fi
-
-    # 添加 Psiphon outbounds (如果有)
-    local other_len=$(echo "$other_outbounds" | jq 'length')
-    if [[ "$other_len" -gt 0 ]]; then
-        jq --argjson obs "$other_outbounds" \
-           '.outbounds += $obs' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
     fi
 
     # 5. 添加 Warp-Pool selector outbound
@@ -244,9 +257,11 @@ update_config_with_warp() {
     # 6. 域名分流规则 → Warp-Pool
     if [[ -n "$warp_domains" ]]; then
         local domain_json=$(echo "$warp_domains" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -sc .)
+        # 删除旧域名规则再添加新的
+        jq 'del(.route.rules[] | select(.domain?))' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
         jq --argjson domains "$domain_json" \
-           '(.route.rules[] | select(.domain? == $domains)).outbound = "Warp-Pool" | if (.route.rules[] | select(.domain? == $domains)) | .outbound == "direct" then (.route.rules[] | select(.domain? == $domains)).outbound = "Warp-Pool" else . end' \
-           "$config" > "${config}.tmp" 2>/dev/null && mv "${config}.tmp" "$config"
+           '.route.rules += [{domain:$domains,outbound:"Warp-Pool"}]' \
+           "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
     fi
 
     # 7. 添加 WARP 直连路由规则
