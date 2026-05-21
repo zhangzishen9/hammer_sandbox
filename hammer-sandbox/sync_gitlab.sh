@@ -142,32 +142,45 @@ proxies:
     alterId: 0
     cipher: auto
     udp: true
+    tls: false
     network: ws
+    servername: www.bing.com
     ws-opts:
-      path: /hammer-vm
+      path: "$uuid-vm"
+      headers:
+        Host: www.bing.com
   - name: 大锤-Hysteria2
     type: hysteria2
     server: $c_ip
     port: $c_p_hy
     password: $uuid
+    alpn:
+      - h3
     sni: www.bing.com
     skip-cert-verify: true
+    fast-open: true
   - name: 大锤-Tuic
     type: tuic
     server: $c_ip
     port: $c_p_tc
     uuid: $uuid
     password: $uuid
-    sni: www.bing.com
-    skip-cert-verify: true
+    alpn: [h3]
+    disable-sni: true
+    reduce-rtt: true
     udp-relay-mode: native
     congestion-controller: bbr
+    sni: www.bing.com
+    skip-cert-verify: true
   - name: 大锤-AnyTLS
     type: anytls
     server: $c_ip
     port: $c_p_an
     password: $uuid
+    client-fingerprint: chrome
     udp: true
+    idle-session-check-interval: 30
+    idle-session-timeout: 30
     sni: www.bing.com
     skip-cert-verify: true
 EOF
@@ -207,21 +220,10 @@ EOF
     cat >> "$SB_CONFIG_DIR/hammer_clash.yaml" <<EOF
 
 proxy-groups:
-  - name: 选择代理节点
-    type: select
-    proxies:
-      - 负载均衡
-      - 自动选择
-      - 大锤-Vless
-      - 大锤-Vmess
-      - 大锤-Hysteria2
-      - 大锤-Tuic
-      - 大锤-AnyTLS${warp_select_list}
-      - DIRECT
   - name: 负载均衡
     type: load-balance
     strategy: round-robin
-    url: http://www.gstatic.com/generate_204
+    url: https://www.gstatic.com/generate_204
     interval: 300
     proxies:
       - 大锤-Vless
@@ -230,18 +232,29 @@ proxy-groups:
       - 大锤-Tuic${warp_proxy_list}
   - name: 自动选择
     type: url-test
-    url: http://www.gstatic.com/generate_204
+    url: https://www.gstatic.com/generate_204
     interval: 300
-    tolerance: 150
+    tolerance: 50
     proxies:
       - 大锤-Vless
       - 大锤-Vmess
       - 大锤-Hysteria2
       - 大锤-Tuic
       - 大锤-AnyTLS${warp_proxy_list}
+  - name: 选择代理节点
+    type: select
+    proxies:
+      - 负载均衡
+      - 自动选择
+      - DIRECT
+      - 大锤-Vless
+      - 大锤-Vmess
+      - 大锤-Hysteria2
+      - 大锤-Tuic
+      - 大锤-AnyTLS${warp_select_list}
 
 rules:
-  - GEOSITE,category-ads-all,REJECT
+  - GEOIP,LAN,DIRECT
   - GEOIP,CN,DIRECT
   - GEOSITE,CN,DIRECT
   - MATCH,选择代理节点
