@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# [大锤sand-box] 万能订阅管理模块 (Final Production Version)
-# 实现全平台(Clash/Singbox/Generic)同步推送，含五协议+WARP直连全量导出
+# [大锤sand-box] 订阅管理模块 (GitLab Git Push 方案)
+# 对标 yg 脚本: 用 git push 推送订阅文件到 GitLab 项目
+# 支持 Clash/Sing-Box/Base64 三合一
 
 source ./core.sh
 
 SB_CONFIG_DIR="/etc/hammer-sb"
 SB_CONF="$SB_CONFIG_DIR/config.json"
-GIST_TOKEN_FILE="$SB_CONFIG_DIR/gist_token.conf"
+GITLAB_CONF="$SB_CONFIG_DIR/gitlab.conf"
 
 # 获取动态运行参数
 extract_params() {
@@ -257,7 +258,118 @@ gen_base64_sub() {
     echo -n "$sub" | base64 | tr -d '\n' > "$SB_CONFIG_DIR/hammer_base64.txt"
 }
 
-# 4. 推送到 GitHub Gist (匿名或带 token)
+# 4. 设置 GitLab 订阅 (对标 yg 的 gitlabsub)
+setup_gitlab() {
+    echo -e "${blue}======================================${plain}"
+    echo -e "${green}   GitLab 订阅链接设置     ${plain}"
+    echo -e "${blue}======================================${plain}"
+    echo -e "请确保 GitLab 官网上已建立项目，已获取访问令牌"
+    echo -e "${yellow}多台 VPS 可共用一个令牌及项目名，通过不同分支区分${plain}"
+
+    # 读取已有配置
+    local old_email="" old_token="" old_userid="" old_project="" old_branch=""
+    if [[ -f "$GITLAB_CONF" ]]; then
+        old_email=$(grep '^EMAIL=' "$GITLAB_CONF" | cut -d= -f2-)
+        old_token=$(grep '^TOKEN=' "$GITLAB_CONF" | cut -d= -f2-)
+        old_userid=$(grep '^USERID=' "$GITLAB_CONF" | cut -d= -f2-)
+        old_project=$(grep '^PROJECT=' "$GITLAB_CONF" | cut -d= -f2-)
+        old_branch=$(grep '^BRANCH=' "$GITLAB_CONF" | cut -d= -f2-)
+        echo -e "当前配置: 用户=${yellow}${old_userid}${plain} 项目=${yellow}${old_project}${plain} 分支=${yellow}${old_branch:-main}${plain}"
+    fi
+
+    echo -e "${blue}--------------------------------------${plain}"
+    echo -e "1: 设置/重置 GitLab 订阅链接"
+    echo -e "0: 返回"
+    read -p "请选择 [0-1]: " gl_choice
+    [[ "$gl_choice" != "1" ]] && return
+
+    read -p "输入登录邮箱: " email
+    read -p "输入访问令牌: " token
+    read -p "输入用户名: " userid
+    read -p "输入项目名: " project
+    echo ""
+    echo -e "${green}多台VPS共用一个令牌及项目名，可创建多个分支订阅链接${plain}"
+    echo -e "${green}回车跳过表示不新建，仅使用主分支main订阅链接(首台VPS建议回车跳过)${plain}"
+    read -p "新建分支名称: " gitlabml
+
+    local git_sk="main"
+    local gitlab_ml=""
+    if [[ -n "$gitlabml" ]]; then
+        gitlab_ml=":${gitlabml}"
+        git_sk="${gitlabml}"
+    fi
+
+    # 保存配置
+    cat > "$GITLAB_CONF" <<EOF
+EMAIL=$email
+TOKEN=$token
+USERID=$userid
+PROJECT=$project
+BRANCH=$git_sk
+EOF
+    chmod 600 "$GITLAB_CONF"
+
+    # 初始化 git 仓库
+    cd "$SB_CONFIG_DIR"
+    rm -rf .git
+    git init >/dev/null 2>&1
+    git add hammer_singbox_client.json hammer_clash.yaml hammer_base64.txt >/dev/null 2>&1
+    git config user.email "$email" >/dev/null 2>&1
+    git config user.name "$userid" >/dev/null 2>&1
+    git commit -m "commit_add_$(date +"%F %T")" >/dev/null 2>&1
+
+    # 重命名 master → main
+    local branches=$(git branch)
+    if [[ "$branches" == *master* ]]; then
+        git branch -m master main >/dev/null 2>&1
+    fi
+
+    # 设置 remote
+    git remote add origin "https://${token}@gitlab.com/${userid}/${project}.git" >/dev/null 2>&1
+
+    # 创建 expect 推送脚本 (处理密码交互)
+    cat > "$SB_CONFIG_DIR/gitpush.sh" <<PUSHEOF
+#!/usr/bin/expect
+spawn bash -c "git push -f origin main${gitlab_ml}"
+expect "Password for 'https://${token}@gitlab.com':"
+send "${token}\r"
+interact
+PUSHEOF
+    chmod +x "$SB_CONFIG_DIR/gitpush.sh"
+
+    # 首次推送
+    if [[ -d "$SB_CONFIG_DIR/.git" ]]; then
+        bash "$SB_CONFIG_DIR/gitpush.sh" >/dev/null 2>&1
+
+        # 生成订阅链接 (对标 yg 格式: GitLab API raw file URL)
+        local encoded_project=$(echo -n "${userid}/${project}" | jq -sRr @uri)
+        echo "https://gitlab.com/api/v4/projects/${encoded_project}/repository/files/hammer_singbox_client.json/raw?ref=${git_sk}&private_token=${token}" > "$SB_CONFIG_DIR/sing_box_gitlab.txt"
+        echo "https://gitlab.com/api/v4/projects/${encoded_project}/repository/files/hammer_clash.yaml/raw?ref=${git_sk}&private_token=${token}" > "$SB_CONFIG_DIR/clash_meta_gitlab.txt"
+        echo "https://gitlab.com/api/v4/projects/${encoded_project}/repository/files/hammer_base64.txt/raw?ref=${git_sk}&private_token=${token}" > "$SB_CONFIG_DIR/base64_gitlab.txt"
+
+        show_sub_links
+    else
+        log_error "GitLab 订阅设置失败，请检查配置。"
+    fi
+    cd - >/dev/null
+}
+
+# 显示订阅链接
+show_sub_links() {
+    local sb_link=$(cat "$SB_CONFIG_DIR/sing_box_gitlab.txt" 2>/dev/null)
+    local clash_link=$(cat "$SB_CONFIG_DIR/clash_meta_gitlab.txt" 2>/dev/null)
+    local b64_link=$(cat "$SB_CONFIG_DIR/base64_gitlab.txt" 2>/dev/null)
+
+    echo -e "${blue}======================================${plain}"
+    echo -e "${green}   三合一订阅已推送至 GitLab    ${plain}"
+    echo -e "${blue}======================================${plain}"
+    [[ -n "$sb_link" ]] && echo -e "SB 订阅:    ${yellow}${sb_link}${plain}"
+    [[ -n "$clash_link" ]] && echo -e "Clash 订阅: ${yellow}${clash_link}${plain}"
+    [[ -n "$b64_link" ]] && echo -e "Base64 订阅: ${yellow}${b64_link}${plain}"
+    echo -e "${blue}======================================${plain}"
+}
+
+# 5. 推送订阅到 GitLab (对标 yg 的 gitlabsubgo)
 sync_to_gitlab() {
     extract_params
 
@@ -270,82 +382,58 @@ sync_to_gitlab() {
     gen_singbox_client
     gen_base64_sub
 
-    log_info "正在推送订阅到 GitHub Gist..."
-
-    # 检查是否配置了 Gist Token
-    local gist_id=""
-    local gist_token=""
-    if [[ -f "$GIST_TOKEN_FILE" ]]; then
-        gist_token=$(cat "$GIST_TOKEN_FILE" | head -1)
-        gist_id=$(cat "$GIST_TOKEN_FILE" | tail -1)
-    fi
-
-    if [[ -n "$gist_token" && -n "$gist_id" ]]; then
-        # 使用 GitHub API 更新 Gist
-        local clash_content=$(cat "$SB_CONFIG_DIR/hammer_clash.yaml" | jq -Rs .)
-        local sb_content=$(cat "$SB_CONFIG_DIR/hammer_singbox_client.json" | jq -Rs .)
-        local b64_content=$(cat "$SB_CONFIG_DIR/hammer_base64.txt" | jq -Rs .)
-
-        local update_resp=$(curl -s -X PATCH "https://api.github.com/gists/$gist_id" \
-            -H "Authorization: Bearer $gist_token" \
-            -H "Content-Type: application/json" \
-            -d "{
-                \"files\": {
-                    \"hammer_clash.yaml\": { \"content\": $clash_content },
-                    \"hammer_singbox.json\": { \"content\": $sb_content },
-                    \"hammer_base64.txt\": { \"content\": $b64_content }
-                }
-            }")
-
-        local gist_url=$(echo "$update_resp" | jq -r '.html_url // empty')
-        if [[ -n "$gist_url" ]]; then
-            log_info "Gist 更新成功！"
-            echo -e "${blue}======================================${plain}"
-            echo -e "${green}   三合一订阅已推送至 GitHub Gist    ${plain}"
-            echo -e "${blue}======================================${plain}"
-            echo -e "订阅主页:   ${yellow}$gist_url${plain}"
-            echo -e "Clash 订阅: ${yellow}${gist_url}/raw/hammer_clash.yaml${plain}"
-            echo -e "SB 订阅:    ${yellow}${gist_url}/raw/hammer_singbox.json${plain}"
-            echo -e "Base64 订阅: ${yellow}${gist_url}/raw/hammer_base64.txt${plain}"
-            echo -e "${blue}======================================${plain}"
-        else
-            log_error "Gist 更新失败，请检查 Token 是否有效。"
-            log_error "API 响应: $update_resp"
-            print_local_paths
-        fi
-    else
-        log_warn "未配置 GitHub Gist Token，订阅文件已生成到本地。"
-        read -p "是否配置 Gist Token 以实现自动推送？(y/N): " cfg
+    # 检查是否已配置 GitLab
+    if [[ ! -f "$GITLAB_CONF" ]]; then
+        log_warn "未配置 GitLab 订阅，订阅文件已生成到本地。"
+        echo -e "${yellow}是否现在设置 GitLab 订阅推送？(y/N): ${plain}"
+        read -p "" cfg
         if [[ "$cfg" == "y" || "$cfg" == "Y" ]]; then
-            read -p "输入 GitHub Personal Access Token (需 gist 权限): " gist_token
-            if [[ -n "$gist_token" ]]; then
-                # 自动创建 Gist
-                local clash_content=$(cat "$SB_CONFIG_DIR/hammer_clash.yaml" | jq -Rs .)
-                local create_resp=$(curl -s -X POST "https://api.github.com/gists" \
-                    -H "Authorization: Bearer $gist_token" \
-                    -H "Content-Type: application/json" \
-                    -d "{
-                        \"description\": \"大锤sand-box 三合一订阅\",
-                        \"public\": false,
-                        \"files\": {
-                            \"hammer_clash.yaml\": { \"content\": $clash_content }
-                        }
-                    }")
-                gist_id=$(echo "$create_resp" | jq -r '.id // empty')
-                if [[ -n "$gist_id" ]]; then
-                    echo "$gist_token" > "$GIST_TOKEN_FILE"
-                    echo "$gist_id" >> "$GIST_TOKEN_FILE"
-                    chmod 600 "$GIST_TOKEN_FILE"
-                    log_info "Gist 已创建，正在完成首次全量推送..."
-                    sync_to_gitlab
-                    return
-                else
-                    log_error "Gist 创建失败: $create_resp"
-                fi
-            fi
+            setup_gitlab
+            return
         fi
         print_local_paths
+        return
     fi
+
+    # 读取 GitLab 配置
+    source "$GITLAB_CONF"
+    local gitlab_ml=""
+    [[ -n "${BRANCH:-}" && "${BRANCH:-}" != "main" ]] && gitlab_ml=":${BRANCH}"
+
+    log_info "正在推送订阅到 GitLab..."
+
+    cd "$SB_CONFIG_DIR"
+
+    if [[ ! -d ".git" ]]; then
+        # git 仓库不存在，重新初始化
+        git init >/dev/null 2>&1
+        git config user.email "${EMAIL}" >/dev/null 2>&1
+        git config user.name "${USERID}" >/dev/null 2>&1
+        git remote add origin "https://${TOKEN}@gitlab.com/${USERID}/${PROJECT}.git" >/dev/null 2>&1
+    fi
+
+    # 更新文件并推送 (对标 yg: git rm → git add → commit → push)
+    git rm --cached hammer_singbox_client.json hammer_clash.yaml hammer_base64.txt >/dev/null 2>&1
+    git add hammer_singbox_client.json hammer_clash.yaml hammer_base64.txt >/dev/null 2>&1
+    git commit -m "commit_add_$(date +"%F %T")" >/dev/null 2>&1
+
+    # 使用 expect 脚本推送
+    if [[ -f "$SB_CONFIG_DIR/gitpush.sh" ]]; then
+        bash "$SB_CONFIG_DIR/gitpush.sh" >/dev/null 2>&1
+    else
+        # 没有 expect 脚本，直接尝试 push
+        git push -f origin "main${gitlab_ml}" >/dev/null 2>&1
+    fi
+
+    # 更新订阅链接
+    local encoded_project=$(echo -n "${USERID}/${PROJECT}" | jq -sRr @uri)
+    local git_sk="${BRANCH:-main}"
+    echo "https://gitlab.com/api/v4/projects/${encoded_project}/repository/files/hammer_singbox_client.json/raw?ref=${git_sk}&private_token=${TOKEN}" > "$SB_CONFIG_DIR/sing_box_gitlab.txt"
+    echo "https://gitlab.com/api/v4/projects/${encoded_project}/repository/files/hammer_clash.yaml/raw?ref=${git_sk}&private_token=${TOKEN}" > "$SB_CONFIG_DIR/clash_meta_gitlab.txt"
+    echo "https://gitlab.com/api/v4/projects/${encoded_project}/repository/files/hammer_base64.txt/raw?ref=${git_sk}&private_token=${TOKEN}" > "$SB_CONFIG_DIR/base64_gitlab.txt"
+
+    show_sub_links
+    cd - >/dev/null
 }
 
 print_local_paths() {

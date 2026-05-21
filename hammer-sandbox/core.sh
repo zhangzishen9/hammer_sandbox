@@ -5,6 +5,37 @@
 
 SB_BINARY_PATH="/usr/local/bin/sing-box"
 SB_CONFIG_DIR="/etc/hammer-sb"
+PORTS_CONF="/etc/hammer-sb/ports.conf"
+
+# 随机端口选择 (对标 yg 的 chooseport)
+# 用法: chooseport [提示自定义]
+# 结果存入 $port 变量
+chooseport() {
+    port=$(shuf -i 10000-65535 -n 1)
+    until [[ -z $(ss -tunlp | grep -w udp | awk '{print $5}' | sed 's/.*://g' | grep -w "$port") && -z $(ss -tunlp | grep -w tcp | awk '{print $5}' | sed 's/.*://g' | grep -w "$port") ]]; do
+        port=$(shuf -i 10000-65535 -n 1)
+    done
+}
+
+# 获取已分配的协议端口 (从 ports.conf 读取，未分配则随机)
+# 用法: get_proto_port <协议tag> <默认端口>
+# 如已有记录返回已有端口，否则随机分配并保存
+get_proto_port() {
+    local tag="$1"
+    local default_port="$2"
+    if [[ -f "$PORTS_CONF" ]]; then
+        local saved=$(grep "^${tag}=" "$PORTS_CONF" | cut -d= -f2)
+        if [[ -n "$saved" ]]; then
+            echo "$saved"
+            return
+        fi
+    fi
+    # 首次: 随机分配
+    chooseport
+    mkdir -p /etc/hammer-sb
+    echo "${tag}=${port}" >> "$PORTS_CONF"
+    echo "$port"
+}
 
 # 颜色
 red='\033[31m\033[01m'

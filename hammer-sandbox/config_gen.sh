@@ -35,6 +35,15 @@ generate_config() {
 
     gen_keys
 
+    # 随机分配5个协议端口 (重置旧端口文件以重新随机)
+    rm -f "$PORTS_CONF"
+    local p_vl=$(get_proto_port "VL" 60001)
+    local p_vm=$(get_proto_port "VM" 60002)
+    local p_hy=$(get_proto_port "HY" 60003)
+    local p_tc=$(get_proto_port "TC" 60004)
+    local p_an=$(get_proto_port "AN" 60005)
+    log_info "端口分配: VL=$p_vl VM=$p_vm HY=$p_hy TC=$p_tc AN=$p_an"
+
     # 用 jq 构建 JSON
     local tmp_inbounds="/tmp/hammer_inbounds.json"
     local tmp_outbounds="/tmp/hammer_outbounds.json"
@@ -43,23 +52,23 @@ generate_config() {
     # --- 构建 inbounds: 5 协议 ---
     jq -n '[]' > "$tmp_inbounds"
 
-    jq --arg port 60001 --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$short_id" \
+    jq --arg port "$p_vl" --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$short_id" \
        '. += [{type:"vless",tag:"in-vl",listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,short_id:[$sid]}}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
-    jq --arg port 60002 --arg uuid "$uuid" \
+    jq --arg port "$p_vm" --arg uuid "$uuid" \
        '. += [{type:"vmess",tag:"in-vm",listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,alterId:0}],transport:{type:"ws",path:"/hammer-vm"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
-    jq --arg port 60003 --arg uuid "$uuid" \
+    jq --arg port "$p_hy" --arg uuid "$uuid" \
        '. += [{type:"hysteria2",tag:"in-hy",listen:"::",listen_port:($port|tonumber),users:[{password:$uuid}],tls:{enabled:true,server_name:"www.bing.com",certificate_path:"/etc/hammer-sb/cert.pem",key_path:"/etc/hammer-sb/key.pem"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
-    jq --arg port 60004 --arg uuid "$uuid" \
+    jq --arg port "$p_tc" --arg uuid "$uuid" \
        '. += [{type:"tuic",tag:"in-tc",listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,password:$uuid}],tls:{enabled:true,server_name:"www.bing.com",certificate_path:"/etc/hammer-sb/cert.pem",key_path:"/etc/hammer-sb/key.pem"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
-    jq --arg port 60005 --arg uuid "$uuid" \
+    jq --arg port "$p_an" --arg uuid "$uuid" \
        '. += [{type:"anytls",tag:"in-an",listen:"::",listen_port:($port|tonumber),users:[{name:"user",password:$uuid}],tls:{enabled:true,server_name:"www.bing.com",certificate_path:"/etc/hammer-sb/cert.pem",key_path:"/etc/hammer-sb/key.pem"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
@@ -124,11 +133,11 @@ generate_config() {
     # 打印报告
     fetch_ip
     local c_addr=$(get_client_addr)
-    local c_p1=$(get_client_port 60001)
-    local c_p2=$(get_client_port 60002)
-    local c_p3=$(get_client_port 60003)
-    local c_p4=$(get_client_port 60004)
-    local c_p5=$(get_client_port 60005)
+    local c_p1=$(get_client_port "$p_vl")
+    local c_p2=$(get_client_port "$p_vm")
+    local c_p3=$(get_client_port "$p_hy")
+    local c_p4=$(get_client_port "$p_tc")
+    local c_p5=$(get_client_port "$p_an")
     log_info "五协议配置完成！"
     echo -e "${blue}======================================${plain}"
     echo -e "${green}   大锤-已为您开通 5 协议     ${plain}"
@@ -189,13 +198,13 @@ update_config_with_warp() {
     jq 'del(.endpoints[]? | select(.tag | startswith("warp-pool-") or startswith("warp-wg-"))) | del(.outbounds[] | select(.tag | startswith("warp-pool-") or startswith("warp-wg-") or .tag == "Warp-Pool")) | del(.inbounds[] | select(.tag | startswith("in-warp"))) | del(.route.rules[] | select(.inbound? // [] | any(startswith("in-warp")))) | del(.route.rules[] | select(.outbound? == "Warp-Pool" and .inbound? == ["in-vl","in-vm","in-hy","in-tc","in-an"]))' \
        "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
 
-    # 3. 添加 WARP 直连 VLESS 入站 (端口从 61001 开始)
+    # 3. 添加 WARP 直连 VLESS 入站 (随机端口)
     local uuid=$(jq -r '.inbounds[0].users[0].uuid' "$config")
     local priv_key=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.private_key' "$config")
 
     for i in $(seq 1 $pool_size); do
         local w_sid=$(openssl rand -hex 8)
-        local w_port=$((61000 + i))
+        local w_port=$(get_proto_port "WARP$i" $((61000 + i)))
         jq --arg port "$w_port" --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$w_sid" --arg tag "in-warp$i" \
            '.inbounds += [{type:"vless",tag:$tag,listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,short_id:[$sid]}}}]' \
            "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
@@ -272,7 +281,8 @@ update_config_with_warp() {
     echo -e "${yellow}--- WARP 直连节点 (每路固定出口) ---${plain}"
     for i in $(seq 1 $pool_size); do
         local sid_i=$(jq -r ".inbounds[] | select(.tag==\"in-warp$i\") | .tls.reality.short_id[0]" "$config" 2>/dev/null || echo "xxxxxxxx")
-        local c_p=$(get_client_port $((61000 + i)))
+        local w_internal_port=$(jq -r ".inbounds[] | select(.tag==\"in-warp$i\") | .listen_port" "$config" 2>/dev/null || echo $((61000+i)))
+        local c_p=$(get_client_port "$w_internal_port")
         echo -e "WARP出口$i: ${yellow}vless://$uuid@$c_addr:$c_p?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apple.com&fp=chrome&pbk=$pub_key&sid=$sid_i&type=tcp#大锤-WARP$i${plain}"
     done
     echo -e "${blue}======================================${plain}"
