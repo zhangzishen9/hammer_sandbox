@@ -20,6 +20,7 @@ extract_params() {
     p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     # public_key: 优先从 config.json 读取，其次从持久化文件，最后推导
     # 统一转为 base64url 格式 (sing-box/Clash 都用此格式: -和_，无+/=)
+    # 同时清理 config.json 中的 public_key 字段 (sing-box 不接受此字段)
     pbk=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     if [[ -z "$pbk" ]]; then
         pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null | head -1 | tr -d '[:space:]')
@@ -27,6 +28,10 @@ extract_params() {
     # 无论从哪里读取，统一转为 base64url 格式
     if [[ -n "$pbk" ]]; then
         pbk=$(echo "$pbk" | sed 's/+/-/g; s/\//_/g; s/=*$//')
+    fi
+    # 清理 config.json 中的 public_key (sing-box 不接受，会导致 reload 失败)
+    if jq -e '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key' "$SB_CONF" >/dev/null 2>&1; then
+        jq 'del(.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key)' "$SB_CONF" > "${SB_CONF}.tmp" && mv "${SB_CONF}.tmp" "$SB_CONF"
     fi
     if [[ -z "$pbk" ]]; then
         # 从 private_key 推导 public_key (X25519)
