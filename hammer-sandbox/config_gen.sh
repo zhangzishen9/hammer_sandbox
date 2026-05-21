@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # [大锤sand-box] 配置生成模块 (Final Expert Version)
-# 支持"独立固定出口模式"，专为注册机设计
+# 5协议 + 域名分流，WARP 池由选项7单独管理
 
 source ./core.sh
-source ./warp_pool.sh
 
 SB_CONFIG_DIR="/etc/hammer-sb"
 BASE_CONF="$SB_CONFIG_DIR/base_config.json"
+DOMAIN_CONF="$SB_CONFIG_DIR/warp_domains.conf"
 
 # 参数初始化
 uuid=$(cat /proc/sys/kernel/random/uuid)
@@ -33,27 +33,24 @@ generate_config() {
     log_info "正在启动大锤 [专家模式] 配置生成..."
     mkdir -p "$SB_CONFIG_DIR"
 
-    read -p "设置 WARP 独立出口数量 (1-10, 默认3): " pool_size
-    pool_size=${pool_size:-3}
-
-    read -p "是否通过 Psiphon 指定出口国家？(如 US, JP, SG, 留空为原生): " country_code
-    country_code=$(echo "$country_code" | tr '[:lower:]' '[:upper:]')
-
     echo ""
     echo -e "${yellow}域名分流配置 (哪些域名走 WARP，其余直连):${plain}"
+    echo -e "${yellow}注意: 需要先通过选项7创建WARP池，分流才会生效${plain}"
     read -p "输入分流域名，多个用逗号分隔 (如 google.com,openai.com, 留空则全部走WARP): " warp_domains
+
+    # 保存域名配置供后续 WARP 池创建时使用
+    echo "$warp_domains" > "$DOMAIN_CONF"
 
     gen_keys
 
-    # 用 jq 构建 JSON，避免 heredoc 拼接问题
+    # 用 jq 构建 JSON
     local tmp_inbounds="/tmp/hammer_inbounds.json"
     local tmp_outbounds="/tmp/hammer_outbounds.json"
     local tmp_rules="/tmp/hammer_rules.json"
 
-    # --- 构建 inbounds ---
+    # --- 构建 inbounds: 5 协议 ---
     jq -n '[]' > "$tmp_inbounds"
 
-    # 5 协议入站
     jq --arg port 60001 --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$short_id" \
        '. += [{type:"vless",tag:"in-vl",listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,short_id:[$sid]}}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
@@ -74,45 +71,26 @@ generate_config() {
        '. += [{type:"anytls",tag:"in-an",listen:"::",listen_port:($port|tonumber),users:[{name:"user",password:$uuid}],tls:{enabled:true,server_name:"www.bing.com",certificate_path:"/etc/hammer-sb/cert.pem",key_path:"/etc/hammer-sb/key.pem"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
-    # WARP 直连入站 (端口从 61001 开始)
-    for i in $(seq 1 $pool_size); do
-        local w_sid=$(openssl rand -hex 8)
-        local w_port=$((61000 + i))
-        jq --arg port "$w_port" --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$w_sid" --arg tag "in-warp$i" \
-           '. += [{type:"vless",tag:$tag,listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,short_id:[$sid]}}}]' \
-           "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
-    done
-
-    # --- 构建 outbounds ---
-    local pool_arr=$(for i in $(seq 1 $pool_size); do echo "\"warp-pool-$i\""; done | paste -sd, -)
-    jq -n --argjson pool "[$pool_arr]" \
-       '[{type:"direct",tag:"direct"},{type:"block",tag:"block"},{type:"selector",tag:"Warp-Pool",outbounds:$pool}]' \
-       > "$tmp_outbounds"
+    # --- 构建 outbounds: 只有 direct + block (WARP 由选项7添加) ---
+    jq -n '[{type:"direct",tag:"direct"},{type:"block",tag:"block"}]' > "$tmp_outbounds"
 
     # --- 构建 route rules ---
     jq -n '[]' > "$tmp_rules"
 
-    # 5 协议入站 → Warp-Pool
-    jq '. += [{inbound:["in-vl","in-vm","in-hy","in-tc","in-an"],outbound:"Warp-Pool"}]' \
+    # 5 协议入站 → direct (WARP 池添加后会改为 Warp-Pool)
+    jq '. += [{inbound:["in-vl","in-vm","in-hy","in-tc","in-an"],outbound:"direct"}]' \
        "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
 
     # DNS sniff
     jq '. += [{protocol:"dns",action:"sniff"}]' \
        "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
 
-    # 域名分流规则
+    # 域名分流规则 (WARP 池添加后会改为 Warp-Pool)
     if [[ -n "$warp_domains" ]]; then
         local domain_json=$(echo "$warp_domains" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -sc .)
-        jq --argjson domains "$domain_json" '. += [{domain:$domains,outbound:"Warp-Pool"}]' \
+        jq --argjson domains "$domain_json" '. += [{domain:$domains,outbound:"direct"}]' \
            "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
     fi
-
-    # WARP 直连路由
-    for i in $(seq 1 $pool_size); do
-        jq --arg tag "in-warp$i" --arg ob "warp-pool-$i" \
-           '. += [{inbound:[$tag],outbound:$ob}]' \
-           "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
-    done
 
     # CN 直连
     jq '. += [{rule_set:["geosite-cn"],outbound:"direct"},{rule_set:["geoip-cn"],outbound:"direct"}]' \
@@ -144,10 +122,19 @@ generate_config() {
 
     rm -f "$tmp_inbounds" "$tmp_outbounds" "$tmp_rules"
 
-    # 证书与池子初始化
+    # 证书
     openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) -keyout /etc/hammer-sb/key.pem -out /etc/hammer-sb/cert.pem -days 3650 -subj "/CN=www.bing.com" >/dev/null 2>&1
-    generate_warp_pool "$pool_size" "$country_code"
-    bash ./re-assemble.sh
+
+    # 初始化空 WARP 池
+    echo "[]" > /etc/hammer-sb/warp_pool.json
+    cp "$BASE_CONF" /etc/hammer-sb/config.json
+
+    # 启动服务
+    if systemctl is-active --quiet hammer-sb 2>/dev/null; then
+        systemctl reload hammer-sb
+    else
+        systemctl start hammer-sb
+    fi
 
     # 打印报告
     fetch_ip
@@ -157,35 +144,122 @@ generate_config() {
     local c_p3=$(get_client_port 60003)
     local c_p4=$(get_client_port 60004)
     local c_p5=$(get_client_port 60005)
-    log_info "配置完成！"
+    log_info "五协议配置完成！"
     echo -e "${blue}======================================${plain}"
-    echo -e "${green}   大锤-已为您开通 5 协议 + $pool_size 路 WARP 直连     ${plain}"
+    echo -e "${green}   大锤-已为您开通 5 协议     ${plain}"
     echo -e "${blue}======================================${plain}"
-    echo -e "${yellow}--- 共享出口 (5协议 → WARP池自动选择) ---${plain}"
     echo -e "Vless-Reality: ${yellow}vless://$uuid@$c_addr:$c_p1?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apple.com&fp=chrome&pbk=$pub_key&sid=$short_id&type=tcp#大锤-VL${plain}"
     echo -e "Vmess-WS:      ${yellow}vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"大锤-VM\",\"add\":\"$c_addr\",\"port\":\"$c_p2\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/hammer-vm\"}" | base64 | tr -d '\n')${plain}"
     echo -e "Hysteria2:     ${yellow}hysteria2://$uuid@$c_addr:$c_p3?security=tls&sni=www.bing.com#大锤-HY${plain}"
     echo -e "Tuic v5:       ${yellow}tuic://$uuid:$uuid@$c_addr:$c_p4?sni=www.bing.com&congestion_control=bbr#大锤-TC${plain}"
     echo -e "AnyTLS:        ${yellow}anytls://user:$uuid@$c_addr:$c_p5?sni=www.bing.com#大锤-AN${plain}"
-
-    # 打印 WARP 直连节点
-    if [[ $pool_size -gt 0 ]]; then
-        echo -e ""
-        echo -e "${yellow}--- WARP 直连节点 (每路固定出口) ---${plain}"
-        for i in $(seq 1 $pool_size); do
-            local sid_i=$(jq -r ".inbounds[] | select(.tag==\"in-warp$i\") | .tls.reality.short_id[0]" "$BASE_CONF" 2>/dev/null || echo "xxxxxxxx")
-            local c_p=$(get_client_port $((61000 + i)))
-            echo -e "WARP出口$i: ${yellow}vless://$uuid@$c_addr:$c_p?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apple.com&fp=chrome&pbk=$pub_key&sid=$sid_i&type=tcp#大锤-WARP$i${plain}"
-        done
-    fi
-
     echo -e "${blue}======================================${plain}"
     if [[ -n "$warp_domains" ]]; then
-        echo -e "域名分流: ${yellow}${warp_domains}${plain} → WARP，其余 → 直连"
-    else
-        echo -e "分流模式: 全部流量走 WARP 池"
+        echo -e "域名分流: ${yellow}${warp_domains}${plain} → WARP (需先通过选项7创建WARP池)"
     fi
+    echo -e "${yellow}下一步: 通过选项7创建WARP池，分流和直连节点将自动生效${plain}"
     [[ "$c_addr" != "$pub_ip" ]] && echo -e "客户端地址映射: ${yellow}${c_addr}${plain} (公网IP: ${pub_ip})"
+}
+
+# WARP 池创建后，更新配置: 添加 WARP outbounds + 直连 VLESS inbounds + 修改路由
+update_config_with_warp() {
+    local pool_size=$1
+    local country=$2
+    local config="/etc/hammer-sb/config.json"
+    local base="/etc/hammer-sb/base_config.json"
+
+    if [[ ! -f "$config" ]]; then
+        log_error "请先通过选项3初始化五协议配置。"
+        return 1
+    fi
+
+    # 读取域名配置
+    local warp_domains=""
+    if [[ -f "$DOMAIN_CONF" ]]; then
+        warp_domains=$(cat "$DOMAIN_CONF" | tr -d '\n')
+    fi
+
+    # 1. 注册 WARP 池
+    generate_warp_pool "$pool_size" "$country"
+
+    # 检查 WARP 池是否有效
+    local pool_len=$(jq 'length' /etc/hammer-sb/warp_pool.json 2>/dev/null || echo 0)
+    if [[ "$pool_len" -eq 0 ]]; then
+        log_error "WARP 池注册失败，配置未更新。"
+        return 1
+    fi
+
+    # 2. 添加 WARP 直连 VLESS 入站 (端口从 61001 开始)
+    local uuid=$(jq -r '.inbounds[0].users[0].uuid' "$config")
+    local priv_key=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.private_key' "$config")
+
+    for i in $(seq 1 $pool_size); do
+        local w_sid=$(openssl rand -hex 8)
+        local w_port=$((61000 + i))
+        jq --arg port "$w_port" --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$w_sid" --arg tag "in-warp$i" \
+           '.inbounds += [{type:"vless",tag:$tag,listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,short_id:[$sid]}}}]' \
+           "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    done
+
+    # 3. 合并 WARP outbounds
+    local pool_outbounds=$(jq -c '.' /etc/hammer-sb/warp_pool.json)
+    jq --slurpfile pool /etc/hammer-sb/warp_pool.json \
+       '.outbounds += $pool[0]' "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+
+    # 4. 添加 Warp-Pool selector outbound
+    local pool_tags=$(for i in $(seq 1 $pool_size); do echo "\"warp-pool-$i\""; done | paste -sd, -)
+    jq --argjson pts "[${pool_tags}]" \
+       '.outbounds += [{type:"selector",tag:"Warp-Pool",outbounds:$pts}]' \
+       "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+
+    # 5. 更新路由: 5 协议入站 → Warp-Pool
+    jq '(.route.rules[] | select(.inbound == ["in-vl","in-vm","in-hy","in-tc","in-an"])).outbound = "Warp-Pool"' \
+       "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+
+    # 6. 域名分流规则 → Warp-Pool
+    if [[ -n "$warp_domains" ]]; then
+        local domain_json=$(echo "$warp_domains" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -sc .)
+        jq --argjson domains "$domain_json" \
+           '(.route.rules[] | select(.domain? == $domains)).outbound = "Warp-Pool" | if (.route.rules[] | select(.domain? == $domains)) | .outbound == "direct" then (.route.rules[] | select(.domain? == $domains)).outbound = "Warp-Pool" else . end' \
+           "$config" > "${config}.tmp" 2>/dev/null && mv "${config}.tmp" "$config"
+    fi
+
+    # 7. 添加 WARP 直连路由规则
+    for i in $(seq 1 $pool_size); do
+        jq --arg tag "in-warp$i" --arg ob "warp-pool-$i" \
+           '.route.rules += [{inbound:[$tag],outbound:$ob}]' \
+           "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
+    done
+
+    # 8. 同步 base_config
+    cp "$config" "$base"
+
+    # 9. 验证并启动
+    if $SB_BINARY_PATH check -c "$config" 2>/dev/null; then
+        if systemctl is-active --quiet hammer-sb 2>/dev/null; then
+            systemctl reload hammer-sb
+        else
+            systemctl start hammer-sb
+        fi
+        log_info "WARP 池已添加，配置已生效！"
+    else
+        log_error "配置验证失败，请检查。"
+        $SB_BINARY_PATH check -c "$config"
+        return 1
+    fi
+
+    # 10. 打印 WARP 直连节点
+    fetch_ip
+    local c_addr=$(get_client_addr)
+    local pub_key=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$config" 2>/dev/null)
+    echo -e ""
+    echo -e "${yellow}--- WARP 直连节点 (每路固定出口) ---${plain}"
+    for i in $(seq 1 $pool_size); do
+        local sid_i=$(jq -r ".inbounds[] | select(.tag==\"in-warp$i\") | .tls.reality.short_id[0]" "$config" 2>/dev/null || echo "xxxxxxxx")
+        local c_p=$(get_client_port $((61000 + i)))
+        echo -e "WARP出口$i: ${yellow}vless://$uuid@$c_addr:$c_p?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apple.com&fp=chrome&pbk=$pub_key&sid=$sid_i&type=tcp#大锤-WARP$i${plain}"
+    done
+    echo -e "${blue}======================================${plain}"
 }
 
 # 静默配置重生成 (从 protocols.conf 读取状态，无交互)

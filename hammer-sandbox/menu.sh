@@ -83,7 +83,7 @@ main() {
                fi
                read -p "按回车键继续..." ;;
             6) enable_bbr; read -p "完成，按回车键继续..." ;;
-            7) source ./warp_pool.sh; read -p "输入路数: " ps; read -p "Psiphon指定国家 (如 US/JP/SG, 留空为原生WARP): " psc; generate_warp_pool $ps "$psc"; bash ./re-assemble.sh; read -p "完成..." ;;
+            7) read -p "输入WARP路数 (1-10, 默认3): " ps; ps=${ps:-3}; read -p "Psiphon指定国家 (如 US/JP/SG, 留空为原生WARP): " psc; source ./config_gen.sh; update_config_with_warp $ps "$psc"; read -p "完成..." ;;
             8) bash ./warp_rotate.sh; read -p "已旋转..." ;;
             9) sync_to_gitlab; read -p "完成..." ;;
             10) journalctl -u hammer-sb -f -n 20 ;;
