@@ -84,7 +84,12 @@ $inbounds_json
     "rules": [
       { "inbound": ["in-vl","in-vm","in-hy","in-tc","in-an"], "outbound": "Warp-Pool" },
       { "protocol": "dns", "action": "sniff" },
-      { "geosite": "cn", "geoip": "cn", "outbound": "direct" }
+      { "rule_set": ["geosite-cn"], "outbound": "direct" },
+      { "rule_set": ["geoip-cn"], "outbound": "direct" }
+    ],
+    "rule_set": [
+      { "type": "remote", "tag": "geosite-cn", "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs", "download_detour": "direct" },
+      { "type": "remote", "tag": "geoip-cn", "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs", "download_detour": "direct" }
     ],
     "final": "direct",
     "auto_detect_interface": true

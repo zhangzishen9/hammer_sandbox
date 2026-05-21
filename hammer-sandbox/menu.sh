@@ -76,9 +76,10 @@ main() {
             4) manage_protocols ;;
             5) read -p "输入新的 WARP 分流域名 (如 google.com, 留空取消): " split_domain
                if [[ -n "$split_domain" ]]; then
-                   sed -i "s/\"geosite\":\s*\"cn\"/\"domain\": [\"$split_domain\"]/" /etc/hammer-sb/config.json 2>/dev/null
-                   systemctl reload hammer-sb
-                   log_info "分流域名已变更为 $split_domain，已热重载。"
+                   # 替换 geosite-cn rule_set 规则为指定域名
+                   jq --arg d "$split_domain" '(.route.rules[] | select(.rule_set // [] | contains(["geosite-cn"]))) |= {"domain": [$d], "outbound": "direct"}' /etc/hammer-sb/config.json > /tmp/hammer-sb-tmp.json && mv /tmp/hammer-sb-tmp.json /etc/hammer-sb/config.json
+                   systemctl reload hammer-sb 2>/dev/null || systemctl start hammer-sb
+                   log_info "分流域名已变更为 $split_domain，已重载。"
                fi
                read -p "按回车键继续..." ;;
             6) enable_bbr; read -p "完成，按回车键继续..." ;;
