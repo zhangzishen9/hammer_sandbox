@@ -15,9 +15,18 @@ fetch_ip() { export pub_ip=$(curl -s4m3 icanhazip.com || echo "您的IP"); }
 
 # 生成密钥对 (复用)
 gen_keys() {
-    rkp=$($SB_BINARY_PATH generate reality-keypair)
-    priv_key=$(echo "$rkp" | grep "Private key:" | awk '{print $3}')
-    pub_key=$(echo "$rkp" | grep "Public key:" | awk '{print $3}')
+    rkp=$($SB_BINARY_PATH generate reality-keypair 2>/dev/null)
+    # 兼容多种输出格式: "Private key: xxx" 或 JSON
+    if echo "$rkp" | jq -e . >/dev/null 2>&1; then
+        priv_key=$(echo "$rkp" | jq -r '.private_key // .privateKey // empty')
+        pub_key=$(echo "$rkp" | jq -r '.public_key // .publicKey // empty')
+    fi
+    if [[ -z "$priv_key" ]]; then
+        priv_key=$(echo "$rkp" | grep -i "private" | awk '{print $NF}')
+    fi
+    if [[ -z "$pub_key" ]]; then
+        pub_key=$(echo "$rkp" | grep -i "public" | awk '{print $NF}')
+    fi
     short_id=$(openssl rand -hex 8)
 }
 

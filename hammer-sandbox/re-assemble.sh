@@ -18,9 +18,13 @@ assemble_and_reload() {
        '.outbounds += $pool[0]' "$BASE_CONF" > "$FINAL_CONF"
     
     if [[ $? -eq 0 ]]; then
-        log_info "配置文件组装成功，正在发送热重载信号..."
-        systemctl reload hammer-sb
-        log_info "Sing-Box 已平滑重载。"
+        log_info "配置文件组装成功，正在启动/重载服务..."
+        if systemctl is-active --quiet hammer-sb 2>/dev/null; then
+            systemctl reload hammer-sb
+        else
+            systemctl start hammer-sb
+        fi
+        log_info "Sing-Box 已启动/重载。"
     else
         log_error "配置文件组装失败，请检查 JSON 格式。"
     fi
