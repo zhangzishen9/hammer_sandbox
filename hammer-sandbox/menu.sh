@@ -89,11 +89,13 @@ show_menu() {
         if [[ "$has_warp" -gt 0 ]]; then
             local warp_split_st="${green}ON${plain}"
             [[ -z "$warp_domains" ]] && warp_split_st="${red}OFF${plain}"
-            # 获取 WARP 出口 IP (通过 clash API 代理检测)
+            # 获取 WARP 出口 IP (通过本地 mixed 代理检测)
             local warp_exit_ip=""
             if systemctl is-active --quiet hammer-sb 2>/dev/null; then
-                # clash API 支持 HTTP 代理，通过 WARP-Pool 出口检测 IP
-                warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:9090 icanhazip.com 2>/dev/null || echo "")
+                local mixed_port=$(grep '^MIXED=' /etc/hammer-sb/ports.conf 2>/dev/null | cut -d= -f2)
+                if [[ -n "$mixed_port" ]]; then
+                    warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port icanhazip.com 2>/dev/null || echo "")
+                fi
             fi
             local warp_ip_info=""
             [[ -n "$warp_exit_ip" ]] && warp_ip_info="  出口IP:${green}${warp_exit_ip}${plain}"

@@ -35,13 +35,55 @@ generate_config() {
 
     gen_keys
 
-    # 随机分配5个协议端口 (重置旧端口文件以重新随机)
+    # 交互式端口设置 (回车随机，对标 yg)
     rm -f "$PORTS_CONF"
-    local p_vl=$(get_proto_port "VL" 60001)
-    local p_vm=$(get_proto_port "VM" 60002)
-    local p_hy=$(get_proto_port "HY" 60003)
-    local p_tc=$(get_proto_port "TC" 60004)
-    local p_an=$(get_proto_port "AN" 60005)
+    echo -e "${blue}======================================${plain}"
+    echo -e "${green}   端口设置 (回车跳过为随机端口)     ${plain}"
+    echo -e "${blue}======================================${plain}"
+
+    read -p "设置 Vless-Reality 端口 (回车随机): " input_p_vl
+    if [[ -n "$input_p_vl" ]]; then
+        p_vl="$input_p_vl"
+    else
+        chooseport; p_vl="$port"
+    fi
+
+    read -p "设置 Vmess-WS 端口 (回车随机): " input_p_vm
+    if [[ -n "$input_p_vm" ]]; then
+        p_vm="$input_p_vm"
+    else
+        chooseport; p_vm="$port"
+    fi
+
+    read -p "设置 Hysteria2 端口 (回车随机): " input_p_hy
+    if [[ -n "$input_p_hy" ]]; then
+        p_hy="$input_p_hy"
+    else
+        chooseport; p_hy="$port"
+    fi
+
+    read -p "设置 Tuic v5 端口 (回车随机): " input_p_tc
+    if [[ -n "$input_p_tc" ]]; then
+        p_tc="$input_p_tc"
+    else
+        chooseport; p_tc="$port"
+    fi
+
+    read -p "设置 AnyTLS 端口 (回车随机): " input_p_an
+    if [[ -n "$input_p_an" ]]; then
+        p_an="$input_p_an"
+    else
+        chooseport; p_an="$port"
+    fi
+
+    # 保存端口到 ports.conf
+    cat > "$PORTS_CONF" <<EOF
+VL=$p_vl
+VM=$p_vm
+HY=$p_hy
+TC=$p_tc
+AN=$p_an
+EOF
     log_info "端口分配: VL=$p_vl VM=$p_vm HY=$p_hy TC=$p_tc AN=$p_an"
 
     # 用 jq 构建 JSON
@@ -71,6 +113,13 @@ generate_config() {
     jq --arg port "$p_an" --arg uuid "$uuid" \
        '. += [{type:"anytls",tag:"in-an",listen:"::",listen_port:($port|tonumber),users:[{name:"user",password:$uuid}],tls:{enabled:true,server_name:"www.bing.com",certificate_path:"/etc/hammer-sb/cert.pem",key_path:"/etc/hammer-sb/key.pem"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
+
+    # 本地混合代理 (仅监听 127.0.0.1，用于 WARP 出口 IP 检测)
+    local mixed_port=$(shuf -i 20000-30000 -n 1)
+    jq --arg port "$mixed_port" \
+       '. += [{type:"mixed",tag:"in-mixed",listen:"127.0.0.1",listen_port:($port|tonumber)}]' \
+       "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
+    echo "MIXED=$mixed_port" >> "$PORTS_CONF"
 
     # --- 构建 outbounds: 只有 direct + block (WARP 由选项7添加) ---
     jq -n '[{type:"direct",tag:"direct"},{type:"block",tag:"block"}]' > "$tmp_outbounds"
