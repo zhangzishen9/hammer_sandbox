@@ -59,6 +59,26 @@ show_menu() {
         echo -e "地址映射:   ${yellow}${map_addr}${plain} (客户端使用此地址连接)"
     fi
     echo -e "Sing-Box 运行状态: $(systemctl is-active hammer-sb >/dev/null 2>&1 && echo -e "${green}Running${plain}" || echo -e "${red}Stopped${plain}")"
+    # 协议端口与状态
+    local sb_conf="/etc/hammer-sb/config.json"
+    if [[ -f "$sb_conf" ]]; then
+        local p_vl=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .listen_port // empty' "$sb_conf" 2>/dev/null)
+        local p_vm=$(jq -r '.inbounds[] | select(.tag=="in-vm") | .listen_port // empty' "$sb_conf" 2>/dev/null)
+        local p_hy=$(jq -r '.inbounds[] | select(.tag=="in-hy") | .listen_port // empty' "$sb_conf" 2>/dev/null)
+        local p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port // empty' "$sb_conf" 2>/dev/null)
+        local p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port // empty' "$sb_conf" 2>/dev/null)
+        local p_wp=$(jq -r '[.inbounds[] | select(.tag | startswith("in-warp")) | .listen_port] | join(",")' "$sb_conf" 2>/dev/null)
+        local vl_st="ON" vm_st="ON" hy_st="ON" tc_st="ON" an_st="ON"
+        if [[ -f "/etc/hammer-sb/protocols.conf" ]]; then
+            [[ "$(grep '^VL=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && vl_st="OFF"
+            [[ "$(grep '^VM=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && vm_st="OFF"
+            [[ "$(grep '^HY=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && hy_st="OFF"
+            [[ "$(grep '^TC=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && tc_st="OFF"
+            [[ "$(grep '^AN=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && an_st="OFF"
+        fi
+        echo -e "协议: VL:${vl_st}(:${p_vl:-N/A}) VM:${vm_st}(:${p_vm:-N/A}) HY:${hy_st}(:${p_hy:-N/A}) TC:${tc_st}(:${p_tc:-N/A}) AN:${an_st}(:${p_an:-N/A})"
+        [[ -n "$p_wp" ]] && echo -e "WARP直连端口: ${yellow}${p_wp}${plain}"
+    fi
     echo -e "流量配额: ${yellow}${traffic_total:-N/A}${plain}  |  已用: ${red}${traffic_used:-N/A}${plain} (${yellow}${traffic_pct:-0%}${plain})  |  剩余: ${green}${traffic_remain:-N/A}${plain}"
     echo -e "重置周期: 每月 ${green}${traffic_reset_day:-1号}${plain}  |  上行: ${yellow}${traffic_up:-N/A}${plain}  |  下行: ${green}${traffic_down:-N/A}${plain}"
     echo -e "${blue}====================================================================================${plain}"

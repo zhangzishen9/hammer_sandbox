@@ -33,14 +33,6 @@ generate_config() {
     log_info "正在启动大锤 [专家模式] 配置生成..."
     mkdir -p "$SB_CONFIG_DIR"
 
-    echo ""
-    echo -e "${yellow}域名分流配置 (哪些域名走 WARP，其余直连):${plain}"
-    echo -e "${yellow}注意: 需要先通过选项7创建WARP池，分流才会生效${plain}"
-    read -p "输入分流域名，多个用逗号分隔 (如 google.com,openai.com, 留空则全部走WARP): " warp_domains
-
-    # 保存域名配置供后续 WARP 池创建时使用
-    echo "$warp_domains" > "$DOMAIN_CONF"
-
     gen_keys
 
     # 用 jq 构建 JSON
@@ -84,13 +76,6 @@ generate_config() {
     # DNS sniff
     jq '. += [{protocol:"dns",action:"sniff"}]' \
        "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
-
-    # 域名分流规则 (WARP 池添加后会改为 Warp-Pool)
-    if [[ -n "$warp_domains" ]]; then
-        local domain_json=$(echo "$warp_domains" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -sc .)
-        jq --argjson domains "$domain_json" '. += [{domain:$domains,outbound:"direct"}]' \
-           "$tmp_rules" > "${tmp_rules}.tmp" && mv "${tmp_rules}.tmp" "$tmp_rules"
-    fi
 
     # CN 直连
     jq '. += [{rule_set:["geosite-cn"],outbound:"direct"},{rule_set:["geoip-cn"],outbound:"direct"}]' \
@@ -154,10 +139,7 @@ generate_config() {
     echo -e "Tuic v5:       ${yellow}tuic://$uuid:$uuid@$c_addr:$c_p4?sni=www.bing.com&congestion_control=bbr#大锤-TC${plain}"
     echo -e "AnyTLS:        ${yellow}anytls://user:$uuid@$c_addr:$c_p5?sni=www.bing.com#大锤-AN${plain}"
     echo -e "${blue}======================================${plain}"
-    if [[ -n "$warp_domains" ]]; then
-        echo -e "域名分流: ${yellow}${warp_domains}${plain} → WARP (需先通过选项7创建WARP池)"
-    fi
-    echo -e "${yellow}下一步: 通过选项7创建WARP池，分流和直连节点将自动生效${plain}"
+    echo -e "${yellow}下一步: 通过选项7创建WARP池，域名分流和直连节点将自动生效${plain}"
     [[ "$c_addr" != "$pub_ip" ]] && echo -e "客户端地址映射: ${yellow}${c_addr}${plain} (公网IP: ${pub_ip})"
 }
 
@@ -178,6 +160,20 @@ update_config_with_warp() {
     if [[ -f "$DOMAIN_CONF" ]]; then
         warp_domains=$(cat "$DOMAIN_CONF" | tr -d '\n')
     fi
+
+    # 0. 询问域名分流策略
+    local warp_domains=""
+    if [[ -f "$DOMAIN_CONF" ]]; then
+        warp_domains=$(cat "$DOMAIN_CONF" | tr -d '\n')
+        echo -e "当前分流域名: ${yellow}${warp_domains}${plain}"
+        read -p "是否修改？输入新域名或回车保持: " new_domains
+        [[ -n "$new_domains" ]] && warp_domains="$new_domains"
+    else
+        echo ""
+        echo -e "${yellow}域名分流配置 (哪些域名走 WARP，其余直连):${plain}"
+        read -p "输入分流域名，多个用逗号分隔 (如 google.com,openai.com, 留空则全部走WARP): " warp_domains
+    fi
+    echo "$warp_domains" > "$DOMAIN_CONF"
 
     # 1. 注册 WARP 池
     generate_warp_pool "$pool_size" "$country"
