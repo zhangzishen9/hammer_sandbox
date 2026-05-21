@@ -18,11 +18,15 @@ extract_params() {
     p_hy=$(jq -r '.inbounds[] | select(.tag=="in-hy") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
-    # public_key: 优先从 config.json 读取 (新配置已写入)，其次从持久化文件，最后推导
-    # 注意: sing-box 用 base64url 格式(-和_)，Clash 也需要 base64url
+    # public_key: 优先从 config.json 读取，其次从持久化文件，最后推导
+    # 统一转为 base64url 格式 (sing-box/Clash 都用此格式: -和_，无+/=)
     pbk=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$SB_CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
     if [[ -z "$pbk" ]]; then
         pbk=$(cat "$SB_CONFIG_DIR/reality_pub.key" 2>/dev/null | head -1 | tr -d '[:space:]')
+    fi
+    # 无论从哪里读取，统一转为 base64url 格式
+    if [[ -n "$pbk" ]]; then
+        pbk=$(echo "$pbk" | sed 's/+/-/g; s/\//_/g; s/=*$//')
     fi
     if [[ -z "$pbk" ]]; then
         # 从 private_key 推导 public_key (X25519)
