@@ -29,9 +29,31 @@ get_local_version() {
     fi
 }
 
+# 安装基础依赖 (Install Base Dependencies)
+install_base_deps() {
+    log_info "正在安装基础依赖..."
+    detect_os
+    case "$release" in
+        ubuntu|debian)
+            apt update -y && apt install -y wget curl git jq openssl python3 bc
+            ;;
+        centos)
+            yum install -y epel-release && yum install -y wget curl git jq openssl python3 bc
+            ;;
+    esac
+    log_info "基础依赖安装完成。"
+}
+
 # 安装或更新内核 (Install or Update Kernel)
 install_kernel() {
     detect_os
+    # arch → cpu 映射 (匹配 GitHub release 命名: amd64, arm64, armv7)
+    case "$arch" in
+        x86_64)  cpu="amd64" ;;
+        aarch64) cpu="arm64" ;;
+        armv7l)  cpu="armv7" ;;
+        *)       cpu="unknown" ;;
+    esac
     if [[ "$cpu" == "unknown" ]]; then
         log_error "不支持的架构: $arch"
         exit 1

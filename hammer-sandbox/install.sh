@@ -19,7 +19,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # 确保基础工具存在
-apt update -y && apt install -y wget curl git jq
+apt update -y && apt install -y wget curl git jq openssl python3 bc
 
 # 2. 拉取项目文件 (此处假设托管路径，用户可自行更新)
 INSTALL_PATH="/root/大锤sand-box"
@@ -27,8 +27,9 @@ echo -e "${yellow}正在准备安装目录...${plain}"
 mkdir -p "$INSTALL_PATH"
 
 # 逻辑：下载所有核心脚本文件
-BASE_URL="https://raw.githubusercontent.com/YourUser/dashui-sandbox/main"
-scripts=("menu.sh" "core.sh" "install_sb.sh" "config_gen.sh" "warp_pool.sh" "warp_rotate.sh" "re-assemble.sh" "sync_gitlab.sh" "protocol_manager.sh")
+BASE_URL="https://raw.githubusercontent.com/zhangzishen9/dashui-sandbox/main"
+scripts=("menu.sh" "core.sh" "install_sb.sh" "config_gen.sh" "warp_pool.sh" "warp_rotate.sh" "re-assemble.sh" "sync_gitlab.sh" "protocol_manager.sh" "hammer_bench.sh" "hammer_web_actiond.sh" "hammer_web_cgi.sh" "hammer_web_state.sh")
+html_files=("hammer_web_ui.html")
 
 for s in "${scripts[@]}"; do
     echo -e "正在拉取 $s..."
@@ -36,6 +37,11 @@ for s in "${scripts[@]}"; do
 done
 
 chmod +x "$INSTALL_PATH"/*.sh
+
+for h in "${html_files[@]}"; do
+    echo -e "正在拉取 $h..."
+    wget -qO "$INSTALL_PATH/$h" "$BASE_URL/$h"
+done
 
 # 3. 初始安装 (注册快捷指令与服务)
 cd "$INSTALL_PATH"

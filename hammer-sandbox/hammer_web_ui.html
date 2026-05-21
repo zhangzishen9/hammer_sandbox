@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大锤 sand-box</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+:root{--bg:#0b0e11;--card:#141820;--border:#1e2530;--text:#b0b8c3;--accent:#f0b90b;--green:#45d174;--red:#f6465d;--blue:#3b82f6;--purple:#a855f7;--cyan:#06b6d4;--warn:#f59e0b;--ring:conic-gradient(#45d174 0deg, #45d174 120deg, #1e2530 120deg, #1e2530 360deg)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:14px/1.5 "Inter",-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:var(--card);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+header h1{font-size:1.3rem;color:#fff;display:flex;align-items:center;gap:8px}
+header .status{font-size:12px;padding:4px 12px;border-radius:20px}
+.status.running{background:rgba(69,209,116,.15);color:var(--green)}
+.status.stopped{background:rgba(246,70,93,.15);color:var(--red)}
+.refresh{font-size:11px;color:var(--text);opacity:.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;padding:20px 24px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.card h2{font-size:13px;font-weight:600;color:#fff;margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:8px}
+.card h2 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot.green{background:var(--green)}
+.dot.blue{background:var(--blue)}
+.dot.purple{background:var(--purple)}
+.dot.cyan{background:var(--cyan)}
+.dot.warn{background:var(--warn)}
+.span2{grid-column:span 2}
+
+/* Traffic ring */
+.ring-wrap{display:flex;align-items:center;gap:30px;justify-content:center}
+.ring{width:160px;height:160px;border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center}
+.ring::before{content:'';position:absolute;inset:0;border-radius:50%;padding:12px;background:var(--ring);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 12px),#000 calc(100% - 11px));mask:radial-gradient(farthest-side,transparent calc(100% - 12px),#000 calc(100% - 11px))}
+.ring-inner{text-align:center;position:relative;z-index:1}
+.ring-inner .val{font-size:2rem;font-weight:700;color:#fff}
+.ring-inner .lbl{font-size:11px;color:var(--text)}
+.ring-stats>div{margin-bottom:8px}
+.ring-stats .label{font-size:11px;color:var(--text)}
+.ring-stats .value{font-size:1.1rem;font-weight:600;color:#fff}
+.ring-stats .value.green{color:var(--green)}
+.ring-stats .value.red{color:var(--red)}
+
+/* Speed */
+.speed-bars{display:flex;gap:12px;justify-content:center}
+.speed-item{text-align:center;flex:1}
+.speed-item .icon{font-size:1.6rem}
+.speed-item .val{font-size:1.4rem;font-weight:700;color:#fff}
+.speed-item .unit{font-size:11px;color:var(--text)}
+
+/* Info grid */
+.info-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-row span:first-child{color:var(--text)}
+.info-row span:last-child{color:#fff;font-weight:500}
+
+/* Protocol toggles */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.toggle-name{font-weight:600;color:#fff;font-size:13px}
+.toggle-sw{width:44px;height:24px;border-radius:12px;background:var(--border);cursor:pointer;position:relative;transition:background .2s}
+.toggle-sw.on{background:var(--green)}
+.toggle-sw::after{content:'';width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:left .2s}
+.toggle-sw.on::after{left:23px}
+
+/* WARP nodes */
+.node-list{max-height:300px;overflow-y:auto}
+.node-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.node-row:last-child{border-bottom:none}
+.node-tag{font-weight:600;color:var(--cyan);width:80px}
+.node-ip{color:#fff;font-family:monospace;font-size:11px;flex:1}
+.node-type{color:var(--text);font-size:10px;padding:2px 8px;background:var(--border);border-radius:4px}
+
+/* QR modal */
+.qr-grid{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.qr-item{text-align:center}
+.qr-item canvas{margin-bottom:6px}
+.qr-item .qr-label{font-size:11px;color:var(--text)}
+.qr-btn{padding:8px 16px;background:var(--border);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;transition:background .2s}
+.qr-btn:hover{background:#2a3340}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal.hidden{display:none}
+.modal-inner{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto}
+.modal-inner h3{color:#fff;margin-bottom:16px}
+.modal-close{float:right;background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer}
+
+/* chart container */
+.chart-wrap{position:relative;height:200px}
+.chart-wrap canvas{width:100%!important}
+
+/* btn */
+.btn{padding:6px 14px;background:var(--border);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;transition:background .2s;margin-right:8px;margin-bottom:8px}
+.btn:hover{background:#2a3340}
+.btn.act{background:var(--blue)}
+.btn.danger{background:var(--red)}
+.btn.warn{background:var(--warn)}
+.btn.green{background:var(--green)}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--green);color:#000;padding:10px 20px;border-radius:8px;font-weight:600;font-size:13px;z-index:200;animation:slide .3s ease}
+@keyframes slide{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* responsive */
+@media(max-width:768px){.span2{grid-column:span 1}.grid{grid-template-columns:1fr;padding:12px}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔨 大锤 sand-box</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="refresh" id="refreshTime">--</span>
+    <span class="status running" id="sbStatus">sing-box</span>
+    <button class="btn" onclick="setUiPass()">🔑 密码</button>
+    <button class="btn danger" onclick="doLogout()">退出</button>
+    <button class="btn" onclick="loadAll()">刷新</button>
+  </div>
+</header>
+
+<div class="grid" id="grid">
+
+  <!-- Traffic Ring -->
+  <div class="card">
+    <h2><span class="dot green"></span>流量配额</h2>
+    <div class="ring-wrap">
+      <div class="ring" id="trafficRing"><div class="ring-inner"><div class="val" id="pctVal">0%</div><div class="lbl">已使用</div></div></div>
+      <div class="ring-stats">
+        <div><div class="label">总额</div><div class="value" id="totalVal">0 GB</div></div>
+        <div><div class="label">已用</div><div class="value red" id="usedVal">0 GB</div></div>
+        <div><div class="label">剩余</div><div class="value green" id="remainVal">0 GB</div></div>
+        <div><div class="label">重置日</div><div class="value" id="resetDay">1号</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Speed -->
+  <div class="card">
+    <h2><span class="dot blue"></span>实时速率</h2>
+    <div style="margin-bottom:16px">
+      <div class="speed-bars">
+        <div class="speed-item"><div class="icon">↓</div><div class="val" id="downSpeed">0</div><div class="unit">B/s 下载</div></div>
+        <div class="speed-item"><div class="icon">↑</div><div class="val" id="upSpeed">0</div><div class="unit">B/s 上传</div></div>
+      </div>
+    </div>
+    <div class="info-row"><span>月下行</span><span id="monthDown">0 GB</span></div>
+    <div class="info-row"><span>月上行</span><span id="monthUp">0 GB</span></div>
+    <div class="info-row"><span>合计传输</span><span id="monthTotal">0 GB</span></div>
+  </div>
+
+  <!-- VPS Info -->
+  <div class="card">
+    <h2><span class="dot cyan"></span>VPS 状态</h2>
+    <div id="vpsInfo"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" id="bbrBtn" onclick="toggleBbr()">BBR</button>
+      <button class="btn warn" onclick="setQuota()">修改配额</button>
+      <button class="btn danger" onclick="resetTraffic()">重置统计</button>
+    </div>
+  </div>
+
+  <!-- Protocol Toggles -->
+  <div class="card">
+    <h2><span class="dot purple"></span>协议开关</h2>
+    <div id="protoToggles"></div>
+  </div>
+
+  <!-- 24h Chart -->
+  <div class="card span2">
+    <h2><span class="dot green"></span>24 小时流量趋势 (MB)</h2>
+    <div class="chart-wrap"><canvas id="historyChart"></canvas></div>
+  </div>
+
+  <!-- WARP Pool -->
+  <div class="card span2">
+    <h2><span class="dot cyan"></span>WARP 出口节点池</h2>
+    <div class="node-list" id="warpNodes"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn act" onclick="rotateWarp()">🔄 立即旋转IP</button>
+    </div>
+  </div>
+
+  <!-- Subscription -->
+  <div class="card span2">
+    <h2><span class="dot warn"></span>订阅管理</h2>
+    <div id="subArea"></div>
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn act" onclick="pushSubscription()">🚀 立即推送订阅</button>
+      <span style="font-size:11px;color:var(--text)" id="gistStatus"></span>
+      <button class="btn" onclick="configGist()">⚙ 配置 Gist</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Login screen -->
+<div class="modal" id="loginModal">
+  <div class="modal-inner" style="max-width:380px;text-align:center">
+    <h3>🔨 大锤 sand-box</h3>
+    <p style="color:var(--text);font-size:13px;margin-bottom:16px" id="loginMsg">请输入管理密码</p>
+    <input type="password" id="passInput" placeholder="密码" style="width:100%;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:#fff;font-size:14px;margin-bottom:12px;outline:none" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn act" onclick="doLogin()" style="width:100%;padding:10px">登 录</button>
+  </div>
+</div>
+<div class="modal hidden" id="qrModal">
+  <div class="modal-inner">
+    <button class="modal-close" onclick="document.getElementById('qrModal').classList.add('hidden')">&times;</button>
+    <h3>扫码订阅</h3>
+    <div class="qr-grid" id="qrContainer"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+const API = 'api/state.json';
+const HISTORY = 'api/history.json';
+let state = null, historyData = null, chart = null;
+let authToken = sessionStorage.getItem('hm_token') || '';
+
+function toast(msg, dur=2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', dur);
+}
+
+function actionBase() { return 'http://' + window.location.hostname + ':9092'; }
+
+function actUrl(type, params) {
+  let u = actionBase() + '/action?type=' + type;
+  if (authToken) u += '&token=' + authToken;
+  if (params) u += '&' + params;
+  return u;
+}
+
+async function checkAuth() {
+  if (!authToken) return false;
+  try {
+    const r = await fetch(actionBase() + '/check_auth?token=' + authToken);
+    const j = await r.json();
+    return j.ok === true;
+  } catch(e) { return false; }
+}
+
+async function doLogin() {
+  const pw = document.getElementById('passInput').value;
+  try {
+    const r = await fetch(actionBase() + '/login?pass=' + encodeURIComponent(pw));
+    const j = await r.json();
+    if (j.ok) {
+      authToken = j.token || '';
+      sessionStorage.setItem('hm_token', authToken);
+      document.getElementById('loginModal').classList.add('hidden');
+      if (!authToken) { toast('未设置密码，直接进入'); }
+      loadAll();
+    } else {
+      document.getElementById('loginMsg').textContent = '密码错误，请重试';
+      document.getElementById('loginMsg').style.color = 'var(--red)';
+    }
+  } catch(e) {
+    document.getElementById('loginMsg').textContent = '连接失败，actiond 未启动';
+    document.getElementById('loginMsg').style.color = 'var(--red)';
+  }
+}
+
+// Auth check before data load
+async function loadAll() {
+  // 如果还没登录，显示登录框
+  if (!authToken) {
+    try {
+      const r = await fetch(actionBase() + '/check_auth?token=');
+      const j = await r.json();
+      // ok=true means no password set, allow through
+      if (j.ok) {
+        document.getElementById('loginModal').classList.add('hidden');
+      } else {
+        document.getElementById('loginModal').classList.remove('hidden');
+        return;
+      }
+    } catch(e) {
+      document.getElementById('loginModal').classList.remove('hidden');
+      return;
+    }
+  }
+  // Verify existing token
+  const valid = await checkAuth();
+  if (!valid) {
+    document.getElementById('loginModal').classList.remove('hidden');
+    document.getElementById('loginMsg').textContent = '登录已过期，请重新输入密码';
+    document.getElementById('loginMsg').style.color = 'var(--text)';
+    authToken = '';
+    sessionStorage.removeItem('hm_token');
+    return;
+  }
+
+  try {
+    const [sr, hr] = await Promise.all([
+      fetch(API + '?t=' + Date.now()).then(r => r.json()),
+      fetch(HISTORY + '?t=' + Date.now()).then(r => r.json()).catch(() => [])
+    ]);
+    state = sr; historyData = hr;
+    renderAll();
+    document.getElementById('refreshTime').textContent = new Date().toLocaleTimeString('zh-CN');
+  } catch(e) {
+    document.getElementById('refreshTime').textContent = '连接失败';
+  }
+}
+
+function formatBytes(b) {
+  if (b >= 1e9) return (b/1e9).toFixed(2) + ' GB';
+  if (b >= 1e6) return (b/1e6).toFixed(1) + ' MB';
+  if (b >= 1e3) return (b/1e3).toFixed(0) + ' KB';
+  return b + ' B';
+}
+
+function formatSpeed(bps) {
+  if (bps >= 1e6) return (bps/1e6).toFixed(1) + ' MB/s';
+  if (bps >= 1e3) return (bps/1e3).toFixed(0) + ' KB/s';
+  return bps + ' B/s';
+}
+
+function renderAll() {
+  const t = state.traffic, v = state.vps, p = state.protocols, n = state.nodes, s = state.subs;
+
+  // Traffic ring
+  const pct = parseFloat(t.pct) || 0;
+  const deg = (pct / 100) * 360;
+  document.getElementById('trafficRing').style.setProperty('--ring',
+    `conic-gradient(#45d174 0deg, #45d174 ${deg}deg, #1e2530 ${deg}deg, #1e2530 360deg)`);
+  document.getElementById('pctVal').textContent = pct.toFixed(1) + '%';
+  document.getElementById('totalVal').textContent = t.total_gb + ' GB';
+  document.getElementById('usedVal').textContent = t.used_gb + ' GB';
+  document.getElementById('remainVal').textContent = t.remain_gb + ' GB';
+  document.getElementById('resetDay').textContent = (t.reset_day || '1') + '号';
+
+  // Speed
+  document.getElementById('downSpeed').textContent = formatSpeed(parseFloat(t.down_speed) || 0);
+  document.getElementById('upSpeed').textContent = formatSpeed(parseFloat(t.up_speed) || 0);
+  document.getElementById('monthDown').textContent = formatBytes(t.down_bytes || 0);
+  document.getElementById('monthUp').textContent = formatBytes(t.up_bytes || 0);
+  document.getElementById('monthTotal').textContent = formatBytes((t.down_bytes||0) + (t.up_bytes||0));
+
+  // SB status
+  const statusEl = document.getElementById('sbStatus');
+  statusEl.textContent = v.sb_running === 'active' ? 'sing-box running' : 'sing-box stopped';
+  statusEl.className = 'status ' + (v.sb_running === 'active' ? 'running' : 'stopped');
+
+  // VPS info
+  document.getElementById('vpsInfo').innerHTML =
+    `<div class="info-row"><span>系统</span><span>${v.os} ${v.arch}</span></div>
+     <div class="info-row"><span>虚拟化</span><span>${v.virt}</span></div>
+     <div class="info-row"><span>BBR</span><span>${v.bbr}</span></div>
+     <div class="info-row"><span>公网 IP</span><span>${v.ip}</span></div>
+     <div class="info-row"><span>地区</span><span>${v.region}</span></div>
+     <div class="info-row"><span>内核版本</span><span>${v.sb_ver}</span></div>`;
+
+  // Protocols
+  const pt = [
+    {key:'vl',name:'Vless-Reality',color:'#45d174'},
+    {key:'vm',name:'Vmess-WS',color:'#3b82f6'},
+    {key:'hy',name:'Hysteria2',color:'#a855f7'},
+    {key:'tc',name:'Tuic v5',color:'#f59e0b'},
+    {key:'an',name:'AnyTLS',color:'#06b6d4'}
+  ];
+  document.getElementById('protoToggles').innerHTML = pt.map(x =>
+    `<div class="toggle-row">
+      <span class="toggle-name" style="color:${x.color}">${x.name}</span>
+      <div class="toggle-sw ${p[x.key]==1?'on':''}" onclick="toggleProto('${x.key}',${p[x.key]})"></div>
+    </div>`
+  ).join('');
+
+  // WARP nodes
+  if (Array.isArray(n) && n.length > 0) {
+    document.getElementById('warpNodes').innerHTML = n.map(nn =>
+      `<div class="node-row">
+        <span class="node-tag">${nn.tag}</span>
+        <span class="node-ip">${(nn.local_address||'--').split('/')[0]}</span>
+        <span class="node-type">${nn.type||'wireguard'}</span>
+      </div>`
+    ).join('');
+  } else {
+    document.getElementById('warpNodes').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text)">暂无节点数据，请先在菜单初始化配置</div>';
+  }
+
+  // Subs
+  if (Array.isArray(s) && s.length > 0) {
+    let html = '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">';
+    s.forEach(sub => {
+      html += `<button class="btn" onclick="copySub('${sub.url.replace(/'/g,"\\'")}')">📋 ${sub.name}</button>`;
+    });
+    html += `<button class="btn act" onclick="showQR()">📱 显示二维码</button></div>`;
+    document.getElementById('subArea').innerHTML = html;
+  } else {
+    document.getElementById('subArea').innerHTML = '<div style="padding:12px;color:var(--text)">暂无订阅链接</div>';
+  }
+
+  renderChart();
+  renderGistStatus();
+}
+
+function renderChart() {
+  if (!historyData || !Array.isArray(historyData) || historyData.length < 2) return;
+  const labels = historyData.map(e => new Date(e.ts*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+  const downs = historyData.map(e => (e.down||0)/1e6);
+  const ups = historyData.map(e => (e.up||0)/1e6);
+
+  if (chart) { chart.data.labels = labels; chart.data.datasets[0].data = downs; chart.data.datasets[1].data = ups; chart.update('none'); return; }
+
+  const ctx = document.getElementById('historyChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {label:'下行 MB',data:downs,borderColor:'#45d174',backgroundColor:'rgba(69,209,116,.1)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},
+        {label:'上行 MB',data:ups,borderColor:'#f0b90b',backgroundColor:'rgba(240,185,11,.1)',fill:true,tension:.3,pointRadius:0,borderWidth:1.5}
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{intersect:false,mode:'index'},
+      plugins:{legend:{labels:{color:'#b0b8c3',boxWidth:12,padding:16,font:{size:11}}}},
+      scales:{
+        x:{ticks:{color:'#555',font:{size:10},maxTicksLimit:12},grid:{color:'#1a1f2a'}},
+        y:{ticks:{color:'#555',font:{size:10}},grid:{color:'#1a1f2a'},beginAtZero:true}
+      }
+    }
+  });
+}
+
+function toggleProto(key, cur) {
+  const v = cur === 1 ? 0 : 1;
+  fetch(actUrl('proto', 'key=' + key + '&val=' + v)).catch(()=>{});
+  state.protocols[key] = v;
+  renderAll();
+  toast((v?'已开启 ':'已关闭 ') + key.toUpperCase());
+}
+
+function rotateWarp() {
+  fetch(actUrl('rotate')).catch(()=>{});
+  toast('已触发 WARP IP 旋转，3秒后刷新...');
+  setTimeout(loadAll, 3000);
+}
+
+function toggleBbr() {
+  const cur = state.vps.bbr === 'bbr' ? 1 : 0;
+  const v = cur === 1 ? 0 : 1;
+  fetch(actUrl('bbr', 'val=' + v)).catch(()=>{});
+  state.vps.bbr = v ? 'bbr' : 'cubic';
+  renderAll();
+  toast(v ? '已开启 BBR 加速' : '已关闭 BBR');
+}
+
+function setQuota() {
+  const total = prompt('总流量配额 (GB):', state.traffic.total_gb || 500);
+  if (!total) return;
+  const day = prompt('每月重置日 (1-28):', state.traffic.reset_day || 1);
+  if (!day) return;
+  fetch(actUrl('quota', 'total=' + total + '&reset_day=' + day)).catch(()=>{});
+  state.traffic.total_gb = total;
+  state.traffic.reset_day = day;
+  renderAll();
+  toast('配额已更新: ' + total + 'GB，每月' + day + '号重置');
+}
+
+function resetTraffic() {
+  if (!confirm('确定要重置本月流量统计？')) return;
+  fetch(actUrl('reset_traffic')).catch(()=>{});
+  toast('流量统计已重置');
+  setTimeout(loadAll, 1500);
+}
+
+function setUiPass() {
+  const pw = prompt('设置管理密码 (留空则清除密码):', '');
+  if (pw === null) return;
+  fetch(actUrl('set_pass', 'val=' + encodeURIComponent(pw))).then(r => r.json()).then(j => {
+    if (j.ok) {
+      if (pw === '') { authToken = ''; sessionStorage.removeItem('hm_token'); }
+      toast(pw ? '密码已设置' : '密码已清除，开放访问');
+    } else { toast('设置失败'); }
+  }).catch(()=>{});
+}
+
+function doLogout() {
+  authToken = '';
+  sessionStorage.removeItem('hm_token');
+  state = null;
+  document.getElementById('grid').innerHTML = '';
+  loadAll();
+}
+
+function pushSubscription() {
+  fetch(actUrl('sync_sub')).then(r => r.json()).then(j => {
+    toast(j.ok ? '订阅推送已触发，后台执行中...' : '推送失败');
+  }).catch(() => toast('推送失败，actiond 未响应'));
+}
+
+function configGist() {
+  let token = prompt('GitHub Personal Access Token (需 gist 权限):', '');
+  if (token === null) return;
+  let gistId = prompt('Gist ID (在 gist URL 里那串, 如已自动创建留空):', '');
+  if (gistId === null) return;
+  let params = 'val=' + encodeURIComponent(token.trim()) + '&id=' + encodeURIComponent(gistId.trim());
+  fetch(actUrl('set_gist_token', params)).then(r => r.json()).then(j => {
+    toast(j.ok ? 'Gist 配置已保存' : '配置失败');
+  }).catch(() => toast('配置失败'));
+}
+
+function renderGistStatus() {
+  const el = document.getElementById('gistStatus');
+  const st = state._gist || {};
+  if (st.configured) {
+    el.innerHTML = 'Gist 已配置 <span style="color:var(--green)">●</span>';
+  } else {
+    el.innerHTML = 'Gist 未配置 <span style="color:var(--warn)">○</span> 点击右侧按钮配置';
+  }
+}
+
+function copySub(url) {
+  if (url.length < 30) { toast('无可用订阅链接'); return; }
+  navigator.clipboard.writeText(url).then(() => toast('已复制到剪贴板'));
+}
+
+function showQR() {
+  const modal = document.getElementById('qrModal');
+  const container = document.getElementById('qrContainer');
+  container.innerHTML = '';
+  modal.classList.remove('hidden');
+  const subs = state.subs || [];
+  subs.forEach(s => {
+    if (!s.url || s.url.length < 10) return;
+    const div = document.createElement('div');
+    div.className = 'qr-item';
+    container.appendChild(div);
+    new QRCode(div, {text:s.url,width:160,height:160,colorDark:'#ffffff',colorLight:'#141820'});
+    const label = document.createElement('div');
+    label.className = 'qr-label';
+    label.textContent = s.name;
+    div.appendChild(label);
+  });
+}
+
+document.getElementById('qrModal').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.add('hidden');
+});
+
+// Auto refresh every 30s
+setInterval(loadAll, 30000);
+loadAll();
+</script>
+</body>
+</html>
