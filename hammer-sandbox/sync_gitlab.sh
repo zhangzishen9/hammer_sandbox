@@ -325,21 +325,27 @@ EOF
     fi
 
     # 设置 remote
-    git remote add origin "https://${token}@gitlab.com/${userid}/${project}.git" >/dev/null 2>&1
+    git remote add origin "https://${userid}:${token}@gitlab.com/${userid}/${project}.git" >/dev/null 2>&1
 
-    # 创建 expect 推送脚本 (处理密码交互)
-    cat > "$SB_CONFIG_DIR/gitpush.sh" <<PUSHEOF
+    # 首次推送 (用 GIT_TERMINAL_PROMPT=0 防止交互，token 已在 URL 中)
+    if [[ -d "$SB_CONFIG_DIR/.git" ]]; then
+        GIT_TERMINAL_PROMPT=0 git push -f origin "main${gitlab_ml}" 2>&1 || {
+            # 如果直接 push 失败，尝试 expect 方式
+            if command -v expect &>/dev/null; then
+                cat > "$SB_CONFIG_DIR/gitpush.sh" <<PUSHEOF
 #!/usr/bin/expect
 spawn bash -c "git push -f origin main${gitlab_ml}"
-expect "Password for 'https://${token}@gitlab.com':"
+expect "Password for*"
 send "${token}\r"
-interact
+expect eof
 PUSHEOF
-    chmod +x "$SB_CONFIG_DIR/gitpush.sh"
-
-    # 首次推送
-    if [[ -d "$SB_CONFIG_DIR/.git" ]]; then
-        bash "$SB_CONFIG_DIR/gitpush.sh" >/dev/null 2>&1
+                chmod +x "$SB_CONFIG_DIR/gitpush.sh"
+                bash "$SB_CONFIG_DIR/gitpush.sh" >/dev/null 2>&1
+            else
+                log_error "git push 失败，请检查 Token 和项目名是否正确。"
+                log_error "提示: 安装 expect 可能有助于解决密码交互问题 (apt install expect)"
+            fi
+        }
 
         # 生成订阅链接 (对标 yg 格式: GitLab API raw file URL)
         local encoded_project=$(echo -n "${userid}/${project}" | jq -sRr @uri)
@@ -409,7 +415,10 @@ sync_to_gitlab() {
         git init >/dev/null 2>&1
         git config user.email "${EMAIL}" >/dev/null 2>&1
         git config user.name "${USERID}" >/dev/null 2>&1
-        git remote add origin "https://${TOKEN}@gitlab.com/${USERID}/${PROJECT}.git" >/dev/null 2>&1
+        git remote add origin "https://${USERID}:${TOKEN}@gitlab.com/${USERID}/${PROJECT}.git" >/dev/null 2>&1
+    else
+        # 确保 remote URL 包含 token
+        git remote set-url origin "https://${USERID}:${TOKEN}@gitlab.com/${USERID}/${PROJECT}.git" >/dev/null 2>&1
     fi
 
     # 更新文件并推送 (对标 yg: git rm → git add → commit → push)
@@ -417,13 +426,14 @@ sync_to_gitlab() {
     git add hammer_singbox_client.json hammer_clash.yaml hammer_base64.txt >/dev/null 2>&1
     git commit -m "commit_add_$(date +"%F %T")" >/dev/null 2>&1
 
-    # 使用 expect 脚本推送
-    if [[ -f "$SB_CONFIG_DIR/gitpush.sh" ]]; then
-        bash "$SB_CONFIG_DIR/gitpush.sh" >/dev/null 2>&1
-    else
-        # 没有 expect 脚本，直接尝试 push
-        git push -f origin "main${gitlab_ml}" >/dev/null 2>&1
-    fi
+    # 推送 (token 在 URL 中，GIT_TERMINAL_PROMPT=0 防止交互)
+    GIT_TERMINAL_PROMPT=0 git push -f origin "main${gitlab_ml}" 2>&1 || {
+        if command -v expect &>/dev/null; then
+            bash "$SB_CONFIG_DIR/gitpush.sh" >/dev/null 2>&1
+        else
+            log_error "推送失败，请检查 Token 和网络。"
+        fi
+    }
 
     # 更新订阅链接
     local encoded_project=$(echo -n "${USERID}/${PROJECT}" | jq -sRr @uri)

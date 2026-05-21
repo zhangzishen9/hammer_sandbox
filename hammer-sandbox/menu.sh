@@ -89,7 +89,15 @@ show_menu() {
         if [[ "$has_warp" -gt 0 ]]; then
             local warp_split_st="${green}ON${plain}"
             [[ -z "$warp_domains" ]] && warp_split_st="${red}OFF${plain}"
-            echo -e "  WARP分流:      ${warp_split_st}  域名:${yellow}${warp_domains:-未配置}${plain}"
+            # 获取 WARP 出口 IP (通过 clash API 代理检测)
+            local warp_exit_ip=""
+            if systemctl is-active --quiet hammer-sb 2>/dev/null; then
+                # clash API 支持 HTTP 代理，通过 WARP-Pool 出口检测 IP
+                warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:9090 icanhazip.com 2>/dev/null || echo "")
+            fi
+            local warp_ip_info=""
+            [[ -n "$warp_exit_ip" ]] && warp_ip_info="  出口IP:${green}${warp_exit_ip}${plain}"
+            echo -e "  WARP分流:      ${warp_split_st}  域名:${yellow}${warp_domains:-未配置}${plain}${warp_ip_info}"
             echo -e "  WARP直连:      ${green}$has_warp 路${plain}  端口:${yellow}${p_wp}${plain}"
         else
             echo -e "  WARP:          ${red}未创建${plain} (通过选项5/7配置)"
