@@ -13,7 +13,6 @@ source ./core.sh
 source ./install_sb.sh
 source ./config_gen.sh
 source ./warp_pool.sh
-source ./sync_gitlab.sh
 source ./protocol_manager.sh
 source ./hammer_bench.sh
 source ./subscription_server.sh
@@ -113,7 +112,7 @@ show_menu() {
     echo -e "${yellow} 4.${plain} 协议管理 【开关/重启服务】"
     echo -e "${yellow} 5.${plain} WARP 管理 【分流/直连/出口IP】"
     echo -e " ----------------------------------------------------------------------------------"
-    echo -e "${yellow} 6.${plain} 订阅推送 【GitLab三合一/刷新节点】"
+    echo -e "${yellow} 6.${plain} 独立订阅 【用户/流量/到期/撤销】"
     echo -e "${yellow} 7.${plain} 流量管理 【配额/统计/重置】"
     echo -e "${yellow} 8.${plain} 系统优化 【BBR/内核版本/日志】"
     echo -e "${yellow} 9.${plain} VPS 体检 【回程/IP质量/跑分】"
@@ -315,27 +314,12 @@ menu_sub() {
     while true; do
         clear
         echo -e "${blue}==================== 订阅推送 ====================${plain}"
-        local gl_conf="/etc/hammer-sb/gitlab.conf"
-        if [[ -f "$gl_conf" ]]; then
-            source "$gl_conf"
-            echo -e "GitLab: ${green}${USERID}/${PROJECT}${plain} 分支: ${yellow}${BRANCH:-main}${plain}"
-            local sb_link=$(cat /etc/hammer-sb/sing_box_gitlab.txt 2>/dev/null)
-            [[ -n "$sb_link" ]] && echo -e "SB订阅: ${yellow}${sb_link}${plain}"
-        else
-            echo -e "GitLab: ${red}未配置${plain}"
-        fi
         echo -e "${blue}--------------------------------------------------${plain}"
-        echo -e "${yellow} 1.${plain} 刷新并推送订阅 (三合一)"
-        echo -e "${yellow} 2.${plain} 设置/重置 GitLab 订阅推送"
-        echo -e "${yellow} 3.${plain} 查看订阅链接"
-        echo -e "${yellow} 4.${plain} 管理独立 Token 订阅"
+        echo -e "${yellow} 1.${plain} 管理独立 Token 订阅"
         echo -e "${yellow} 0.${plain} 返回上层"
         read -p "请选择: " c
         case $c in
-            1) sync_to_gitlab; read -p "按回车继续..." ;;
-            2) setup_gitlab; read -p "按回车继续..." ;;
-            3) show_sub_links 2>/dev/null; print_local_paths; read -p "按回车继续..." ;;
-            4) manage_subscriptions ;;
+            1) manage_subscriptions ;;
             0) return ;;
         esac
     done
@@ -406,6 +390,9 @@ menu_bench() {
 
 # ==================== 主循环 ====================
 main() {
+    if systemctl is-enabled --quiet hammer-sub 2>/dev/null; then
+        install_subscription_service >/dev/null 2>&1 || log_warn "订阅服务升级同步失败，请检查 hammer-sub。"
+    fi
     update_stats
     while true; do
         show_menu

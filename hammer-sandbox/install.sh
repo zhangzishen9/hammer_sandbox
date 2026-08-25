@@ -19,7 +19,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # 确保基础工具存在
-apt update -y && apt install -y wget curl git jq openssl python3 python3-pip python3-cryptography bc
+apt update -y && apt install -y wget curl jq nftables openssl python3 python3-pip python3-cryptography bc
 
 # 升级时清理已移除的旧 Web UI 后台与定时任务。
 if [[ -f /tmp/hammer-actiond.pid ]]; then
@@ -38,7 +38,7 @@ mkdir -p "$INSTALL_PATH"
 
 # 逻辑：下载所有核心脚本文件
 BASE_URL="https://raw.githubusercontent.com/zhangzishen9/hammer_sandbox/main/hammer-sandbox"
-scripts=("menu.sh" "core.sh" "install_sb.sh" "config_gen.sh" "warp_pool.sh" "warp_rotate.sh" "re-assemble.sh" "sync_gitlab.sh" "protocol_manager.sh" "hammer_bench.sh" "subscription_server.sh")
+scripts=("menu.sh" "core.sh" "install_sb.sh" "config_gen.sh" "warp_pool.sh" "warp_rotate.sh" "re-assemble.sh" "protocol_manager.sh" "hammer_bench.sh" "subscription_server.sh" "subscription_manager.py")
 
 for s in "${scripts[@]}"; do
     echo -e "正在拉取 $s..."

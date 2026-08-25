@@ -35,10 +35,10 @@ install_base_deps() {
     detect_os
     case "$release" in
         ubuntu|debian)
-            apt update -y && apt install -y wget curl git jq openssl python3 bc
+            apt update -y && apt install -y wget curl jq nftables openssl python3 bc
             ;;
         centos)
-            yum install -y epel-release && yum install -y wget curl git jq openssl python3 bc
+            yum install -y epel-release && yum install -y wget curl jq nftables openssl python3 bc
             ;;
     esac
     log_info "基础依赖安装完成。"

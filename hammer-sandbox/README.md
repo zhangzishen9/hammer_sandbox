@@ -13,17 +13,14 @@
 ### 1. WARP 内部动态出口池
 大锤支持服务端内部 WARP 出口池及定时旋转。WARP 仅用于域名分流或统一出口，不再为每一路 WARP 创建、开放或发布独立公网代理节点。
 
-### 2. 三合一万能订阅 (Triple-Subscription)
-一次同步，全平台支持。生成的订阅包含：
-*   **Mihomo (Clash Meta)**: 内置“选择代理节点”、“负载均衡”、“自动选择”组。
-*   **Sing-box (SFA/SFI)**: 专用的 JSON 客户端模板。
-*   **Generic Base64**: 适配小火箭/Nekobox 等所有主流软件。
+### 2. Clash 独立订阅
+每个订阅拥有独立凭据、端口、协议组合、配额和到期时间，并通过机器 IP 直接分发给 Clash Verge/Mihomo 客户端。
 
 ### 3. 二级开关大厅 (Protocol Control Center)
 拒绝繁琐。通过二级可视化菜单，您可以像拨动耳机开关一样，一键开启或关闭特定协议，无需重写任何配置。
 
 ### 4. 独立 Token 订阅分发
-可为不同使用者创建独立订阅 Token，分别配置协议组合、流量配额和到期时间。每台 VPS 会通过 `http://机器IP:16000/sub/随机Token` 直接提供订阅，无需 GitLab 或域名。Clash 订阅响应包含 `Subscription-Userinfo`，客户端刷新后可显示服务器统计的用量。当前版本的流量统计是服务器总量，并非按 Token 独立计量。
+可为不同使用者创建独立订阅 Token、代理凭据和端口，分别配置协议组合、流量配额、重置日和到期时间。每台 VPS 会通过 `http://机器IP:16000/sub/随机Token` 直接提供订阅，无需 GitLab 或域名。流量通过 nftables 按订阅端口独立计量；超额、到期或停用后会撤销对应服务端入站。
 
 ---
 
@@ -51,7 +48,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/zhangzishen9/hammer_sandbox/m
 *   `protocol_manager.sh`: 协议二级开关管理
 *   `warp_pool.sh`: WARP 动态账号池管理
 *   `config_gen.sh`: 灵活配置生成引擎
-*   `sync_gitlab.sh`: 全量订阅同步工具
+*   `subscription_server.sh`: 独立订阅的本机管理入口
+*   `subscription_manager.py`: 独立凭据、流量计量和订阅分发服务
 
 ---
 *Powered by Hammer-Architects.*
