@@ -36,7 +36,21 @@ jq ".[$((target_idx-1))].private_key = \"$priv\" | \
 
 mv "$WARP_POOL_CONF.tmp" "$WARP_POOL_CONF"
 
-# 5. 触发重组与重载
-bash ./re-assemble.sh
+# 5. 同步运行配置中的 endpoint，校验后重载。
+CONFIG_FILE="$BASE_DIR/config.json"
+if [[ -f "$CONFIG_FILE" ]]; then
+    jq --slurpfile pool "$WARP_POOL_CONF" \
+       '.endpoints = ((.endpoints // []) | map(select(.tag | startswith("warp-pool-") | not))) + $pool[0]' \
+       "$CONFIG_FILE" > "$CONFIG_FILE.tmp" || exit 1
+    if /usr/local/bin/sing-box check -c "$CONFIG_FILE.tmp" >/dev/null 2>&1; then
+        mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+        cp "$CONFIG_FILE" "$BASE_DIR/base_config.json"
+        systemctl reload hammer-sb 2>/dev/null || systemctl restart hammer-sb
+    else
+        rm -f "$CONFIG_FILE.tmp"
+        log_error "轮换后的配置校验失败，未重载服务。"
+        exit 1
+    fi
+fi
 log_info "节点 [$target_idx] 刷新完成，新 IP 已生效。"
 log_info "------------------------------------------"

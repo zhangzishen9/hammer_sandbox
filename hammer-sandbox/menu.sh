@@ -16,6 +16,7 @@ source ./warp_pool.sh
 source ./sync_gitlab.sh
 source ./protocol_manager.sh
 source ./hammer_bench.sh
+source ./subscription_server.sh
 
 # 颜色
 red='\033[31m\033[01m'
@@ -49,7 +50,6 @@ show_status() {
         local p_hy=$(jq -r '.inbounds[] | select(.tag=="in-hy") | .listen_port // empty' "$sb_conf" 2>/dev/null)
         local p_tc=$(jq -r '.inbounds[] | select(.tag=="in-tc") | .listen_port // empty' "$sb_conf" 2>/dev/null)
         local p_an=$(jq -r '.inbounds[] | select(.tag=="in-an") | .listen_port // empty' "$sb_conf" 2>/dev/null)
-        local p_wp=$(jq -r '[.inbounds[] | select(.tag | startswith("in-warp")) | .listen_port] | join(",")' "$sb_conf" 2>/dev/null)
         local vl_st="${green}ON${plain}" vm_st="${green}ON${plain}" hy_st="${green}ON${plain}" tc_st="${green}ON${plain}" an_st="${green}ON${plain}"
         if [[ -f "/etc/hammer-sb/protocols.conf" ]]; then
             [[ "$(grep '^VL=' /etc/hammer-sb/protocols.conf | cut -d= -f2)" == "0" ]] && vl_st="${red}OFF${plain}"
@@ -77,7 +77,7 @@ show_status() {
                 if [[ -z "$mixed_port" ]]; then
                     mixed_port=$(shuf -i 20000-30000 -n 1)
                     jq --arg port "$mixed_port" \
-                       '.inbounds += [{type:"mixed",tag:"in-mixed",listen:"::",listen_port:($port|tonumber)}]' \
+                       '.inbounds += [{type:"mixed",tag:"in-mixed",listen:"127.0.0.1",listen_port:($port|tonumber)}]' \
                        "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
                     jq '(.route.rules[] | select(.inbound == ["in-vl","in-vm","in-hy","in-tc","in-an"])).outbound = "Warp-Pool"' \
                        "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
@@ -86,19 +86,12 @@ show_status() {
                     systemctl reload hammer-sb 2>/dev/null
                     sleep 1
                 fi
-                # 自动补丁: 给现有配置添加 public_key
-                local has_pub=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$sb_conf" 2>/dev/null)
-                if [[ -z "$has_pub" && -f /etc/hammer-sb/reality_pub.key ]]; then
-                    local saved_pub=$(cat /etc/hammer-sb/reality_pub.key)
-                    jq --arg pub "$saved_pub" '(.inbounds[] | select(.tag=="in-vl")).tls.reality.public_key = $pub' "$sb_conf" > "${sb_conf}.tmp" && mv "${sb_conf}.tmp" "$sb_conf"
-                    systemctl reload hammer-sb 2>/dev/null
-                fi
                 warp_exit_ip=$(curl -s4m3 -x http://127.0.0.1:$mixed_port https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -oP 'ip=\K[0-9.]+')
             fi
             local warp_ip_info=""
             [[ -n "$warp_exit_ip" ]] && warp_ip_info="  出口IP:${green}${warp_exit_ip}${plain}"
             echo -e "  WARP分流:      ${warp_split_st}  域名:${yellow}${warp_domains:-未配置}${plain}"
-            echo -e "  WARP直连:      ${green}${has_warp}路${plain}  端口:${yellow}${p_wp}${plain}${warp_ip_info}"
+            echo -e "  WARP出口池:    ${green}${has_warp}路${plain}${warp_ip_info}"
         else
             echo -e "  WARP:          ${red}未创建${plain}"
         fi
@@ -254,13 +247,13 @@ menu_warp() {
             local warp_split_st="${green}已开启${plain}"
             [[ -z "$warp_domains" ]] && warp_split_st="${red}未配置域名${plain}"
             echo -e "WARP分流: ${warp_split_st}  域名: ${yellow}${warp_domains:-无}${plain}"
-            echo -e "WARP直连: ${green}${has_warp}路${plain}"
+            echo -e "WARP出口池: ${green}${has_warp}路${plain}（仅内部使用）"
         else
             echo -e "WARP: ${red}未创建${plain}"
         fi
         echo -e "${blue}--------------------------------------------------${plain}"
         echo -e "${yellow} 1.${plain} WARP 分流开关/域名配置"
-        echo -e "${yellow} 2.${plain} WARP 直连节点管理 (创建/增减)"
+        echo -e "${yellow} 2.${plain} WARP 内部出口池管理 (创建/增减)"
         echo -e "${yellow} 3.${plain} 触发 WARP IP 旋转"
         echo -e "${yellow} 4.${plain} 查看 WARP 出口 IP / 解锁状态"
         echo -e "${yellow} 0.${plain} 返回上层"
@@ -290,7 +283,7 @@ menu_warp() {
                    fi
                fi
                read -p "按回车继续..." ;;
-            2) # WARP 直连节点
+            2) # WARP 内部出口池
                read -p "输入WARP路数 (1-10, 默认3): " ps; ps=${ps:-3}
                read -p "指定出口国家 (如 US/JP/SG, 留空原生WARP): " psc
                update_config_with_warp $ps "$psc"
@@ -335,12 +328,14 @@ menu_sub() {
         echo -e "${yellow} 1.${plain} 刷新并推送订阅 (三合一)"
         echo -e "${yellow} 2.${plain} 设置/重置 GitLab 订阅推送"
         echo -e "${yellow} 3.${plain} 查看订阅链接"
+        echo -e "${yellow} 4.${plain} 管理独立 Token 订阅"
         echo -e "${yellow} 0.${plain} 返回上层"
         read -p "请选择: " c
         case $c in
             1) sync_to_gitlab; read -p "按回车继续..." ;;
             2) setup_gitlab; read -p "按回车继续..." ;;
             3) show_sub_links 2>/dev/null; print_local_paths; read -p "按回车继续..." ;;
+            4) manage_subscriptions ;;
             0) return ;;
         esac
     done
@@ -386,35 +381,14 @@ menu_system() {
         echo -e "${yellow} 1.${plain} 开启/重置 TCP BBR 加速"
         echo -e "${yellow} 2.${plain} 更新/切换 Sing-box 内核版本"
         echo -e "${yellow} 3.${plain} 查看 Sing-box 运行日志"
-        echo -e "${yellow} 4.${plain} 启动/重启 Web UI 仪表盘"
-        echo -e "${yellow} 5.${plain} 设置/修改 Web UI 密码"
+        echo -e "${yellow} 4.${plain} 启动/重启只读订阅服务"
         echo -e "${yellow} 0.${plain} 返回上层"
         read -p "请选择: " c
         case $c in
             1) enable_bbr; read -p "按回车继续..." ;;
             2) install_kernel; setup_service; read -p "按回车继续..." ;;
             3) journalctl -u hammer-sb -f -n 20 ;;
-            4) mkdir -p /etc/hammer-sb/ui/api
-                cp "$SCRIPT_DIR/hammer_web_ui.html" /etc/hammer-sb/ui/index.html 2>/dev/null || cp ./hammer_web_ui.html /etc/hammer-sb/ui/index.html
-                cp "$SCRIPT_DIR/hammer_web_actiond.sh" /etc/hammer-sb/ui/ 2>/dev/null || cp ./hammer_web_actiond.sh /etc/hammer-sb/ui/
-                cp "$SCRIPT_DIR/hammer_web_state.sh" /etc/hammer-sb/ui/ 2>/dev/null || cp ./hammer_web_state.sh /etc/hammer-sb/ui/
-                chmod +x /etc/hammer-sb/ui/*.sh
-                bash /etc/hammer-sb/ui/hammer_web_actiond.sh restart
-                (crontab -l 2>/dev/null | grep -v "hammer_web_state"; echo "* * * * * bash /etc/hammer-sb/ui/hammer_web_state.sh >> /var/log/hammer-web-state.log 2>&1") | crontab -
-                systemctl reload hammer-sb 2>/dev/null
-                log_info "Web UI 已部署。访问 http://$(get_client_addr):9090"
-                read -p "按回车继续..." ;;
-            5) read -sp "设置 Web UI 管理密码 (留空则清除密码): " ui_pass
-                echo ""
-                if [[ -z "$ui_pass" ]]; then
-                    rm -f /etc/hammer-sb/ui_pass.conf
-                    log_info "密码已清除。"
-                else
-                    echo "$ui_pass" > /etc/hammer-sb/ui_pass.conf
-                    chmod 600 /etc/hammer-sb/ui_pass.conf
-                    log_info "密码已设置。"
-                fi
-                read -p "按回车继续..." ;;
+            4) install_subscription_service; read -p "按回车继续..." ;;
             0) return ;;
         esac
     done

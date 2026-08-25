@@ -30,7 +30,6 @@ gen_keys() {
     # 持久化 public_key (config.json 里只有 private_key)
     echo "$pub_key" > "$SB_CONFIG_DIR/reality_pub.key"
     echo "$short_id" > "$SB_CONFIG_DIR/reality_sid.key"
-    short_id=$(openssl rand -hex 8)
 }
 
 generate_config() {
@@ -118,10 +117,10 @@ EOF
        '. += [{type:"anytls",tag:"in-an",listen:"::",listen_port:($port|tonumber),users:[{name:"user",password:$uuid}],tls:{enabled:true,server_name:"www.bing.com",certificate_path:"/etc/hammer-sb/cert.pem",key_path:"/etc/hammer-sb/key.pem"}}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
 
-    # 本地混合代理 (用于 WARP 出口 IP 检测，监听所有接口)
+    # 本地混合代理，仅用于本机检测 WARP 出口 IP。
     local mixed_port=$(shuf -i 20000-30000 -n 1)
     jq --arg port "$mixed_port" \
-       '. += [{type:"mixed",tag:"in-mixed",listen:"::",listen_port:($port|tonumber)}]' \
+       '. += [{type:"mixed",tag:"in-mixed",listen:"127.0.0.1",listen_port:($port|tonumber)}]' \
        "$tmp_inbounds" > "${tmp_inbounds}.tmp" && mv "${tmp_inbounds}.tmp" "$tmp_inbounds"
     echo "MIXED=$mixed_port" >> "$PORTS_CONF"
 
@@ -167,7 +166,7 @@ EOF
          },
          experimental:{
            cache_file:{enabled:true,path:"/etc/hammer-sb/cache.db"},
-           clash_api:{external_controller:"0.0.0.0:9090",external_ui:"/etc/hammer-sb/ui"}
+           clash_api:{external_controller:"127.0.0.1:9090"}
          }
        }' > "$BASE_CONF"
 
@@ -216,7 +215,7 @@ EOF
     [[ "$c_addr" != "$pub_ip" ]] && echo -e "客户端地址映射: ${yellow}${c_addr}${plain} (公网IP: ${pub_ip})"
 }
 
-# WARP 池创建后，更新配置: 添加 WARP outbounds + 直连 VLESS inbounds + 修改路由
+# WARP 池创建后，更新内部 WARP outbounds 和路由；不暴露逐路公网节点。
 update_config_with_warp() {
     local pool_size=$1
     local country=$2
@@ -277,19 +276,7 @@ update_config_with_warp() {
     jq 'del(.route.rules[] | select(.outbound == "Warp-Pool" and (.inbound // []) == ["in-vl","in-vm","in-hy","in-tc","in-an"]))' \
        "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
 
-    # 3. 添加 WARP 直连 VLESS 入站 (随机端口)
-    local uuid=$(jq -r '.inbounds[0].users[0].uuid' "$config")
-    local priv_key=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.private_key' "$config")
-
-    for i in $(seq 1 $pool_size); do
-        local w_sid=$(openssl rand -hex 8)
-        local w_port=$(get_proto_port "WARP$i" $((61000 + i)))
-        jq --arg port "$w_port" --arg uuid "$uuid" --arg priv "$priv_key" --arg sid "$w_sid" --arg tag "in-warp$i" \
-           '.inbounds += [{type:"vless",tag:$tag,listen:"::",listen_port:($port|tonumber),users:[{uuid:$uuid,flow:"xtls-rprx-vision"}],tls:{enabled:true,server_name:"apple.com",reality:{enabled:true,handshake:{server:"apple.com",server_port:443},private_key:$priv,short_id:[$sid]}}}]' \
-           "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
-    done
-
-    # 4. 合并 WARP endpoints (纯 WireGuard，全部放 endpoints)
+    # 3. 合并 WARP endpoints (纯 WireGuard，全部放 endpoints)
     local wg_endpoints=$(cat /etc/hammer-sb/warp_pool.json)
 
     # 添加 endpoints (如果不存在则创建数组)
@@ -323,13 +310,6 @@ update_config_with_warp() {
            "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
     fi
 
-    # 7. 添加 WARP 直连路由规则
-    for i in $(seq 1 $pool_size); do
-        jq --arg tag "in-warp$i" --arg ob "warp-pool-$i" \
-           '.route.rules += [{inbound:[$tag],outbound:$ob}]' \
-           "$config" > "${config}.tmp" && mv "${config}.tmp" "$config"
-    done
-
     # 8. 同步 base_config
     cp "$config" "$base"
 
@@ -347,19 +327,7 @@ update_config_with_warp() {
         return 1
     fi
 
-    # 10. 打印 WARP 直连节点
-    fetch_ip
-    local c_addr=$(get_client_addr)
-    local pub_key=$(jq -r '.inbounds[] | select(.tag=="in-vl") | .tls.reality.public_key // empty' "$config" 2>/dev/null)
-    echo -e ""
-    echo -e "${yellow}--- WARP 直连节点 (每路固定出口) ---${plain}"
-    for i in $(seq 1 $pool_size); do
-        local sid_i=$(jq -r ".inbounds[] | select(.tag==\"in-warp$i\") | .tls.reality.short_id[0]" "$config" 2>/dev/null || echo "xxxxxxxx")
-        local w_internal_port=$(jq -r ".inbounds[] | select(.tag==\"in-warp$i\") | .listen_port" "$config" 2>/dev/null || echo $((61000+i)))
-        local c_p=$(get_client_port "$w_internal_port")
-        echo -e "WARP出口$i: ${yellow}vless://$uuid@$c_addr:$c_p?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apple.com&fp=chrome&pbk=$pub_key&sid=$sid_i&type=tcp#大锤-WARP$i${plain}"
-    done
-    echo -e "${blue}======================================${plain}"
+    log_info "WARP 内部出口池已更新（未创建独立公网节点）。"
 }
 
 # 静默配置重生成 (从 protocols.conf 读取状态，无交互)

@@ -21,6 +21,16 @@ fi
 # 确保基础工具存在
 apt update -y && apt install -y wget curl git jq openssl python3 python3-pip python3-cryptography bc
 
+# 升级时清理已移除的旧 Web UI 后台与定时任务。
+if [[ -f /tmp/hammer-actiond.pid ]]; then
+    old_web_pid=$(cat /tmp/hammer-actiond.pid 2>/dev/null)
+    [[ "$old_web_pid" =~ ^[0-9]+$ ]] && kill "$old_web_pid" 2>/dev/null || true
+    rm -f /tmp/hammer-actiond.pid
+fi
+crontab -l 2>/dev/null | grep -v "hammer_web_state" | crontab -
+rm -rf /etc/hammer-sb/ui
+rm -f /etc/hammer-sb/ui_pass.conf
+
 # 2. 拉取项目文件 (此处假设托管路径，用户可自行更新)
 INSTALL_PATH="/root/hammer-sandbox"
 echo -e "${yellow}正在准备安装目录...${plain}"
@@ -28,20 +38,19 @@ mkdir -p "$INSTALL_PATH"
 
 # 逻辑：下载所有核心脚本文件
 BASE_URL="https://raw.githubusercontent.com/zhangzishen9/hammer_sandbox/main/hammer-sandbox"
-scripts=("menu.sh" "core.sh" "install_sb.sh" "config_gen.sh" "warp_pool.sh" "warp_rotate.sh" "re-assemble.sh" "sync_gitlab.sh" "protocol_manager.sh" "hammer_bench.sh" "hammer_web_actiond.sh" "hammer_web_cgi.sh" "hammer_web_state.sh")
-html_files=("hammer_web_ui.html")
+scripts=("menu.sh" "core.sh" "install_sb.sh" "config_gen.sh" "warp_pool.sh" "warp_rotate.sh" "re-assemble.sh" "sync_gitlab.sh" "protocol_manager.sh" "hammer_bench.sh" "subscription_server.sh")
 
 for s in "${scripts[@]}"; do
     echo -e "正在拉取 $s..."
-    wget -qO "$INSTALL_PATH/$s" "$BASE_URL/$s"
+    if ! wget -qO "$INSTALL_PATH/$s.tmp" "$BASE_URL/$s" || [[ ! -s "$INSTALL_PATH/$s.tmp" ]]; then
+        rm -f "$INSTALL_PATH/$s.tmp"
+        echo -e "${red}下载 $s 失败，安装已中止。${plain}"
+        exit 1
+    fi
+    mv "$INSTALL_PATH/$s.tmp" "$INSTALL_PATH/$s"
 done
 
 chmod +x "$INSTALL_PATH"/*.sh
-
-for h in "${html_files[@]}"; do
-    echo -e "正在拉取 $h..."
-    wget -qO "$INSTALL_PATH/$h" "$BASE_URL/$h"
-done
 
 # 3. 初始安装 (注册快捷指令与服务)
 cd "$INSTALL_PATH"

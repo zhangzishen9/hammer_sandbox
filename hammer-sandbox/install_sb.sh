@@ -130,7 +130,9 @@ uninstall_sb() {
     # 1. 停止并禁用服务
     systemctl stop hammer-sb >/dev/null 2>&1
     systemctl disable hammer-sb >/dev/null 2>&1
+    systemctl disable --now hammer-sub >/dev/null 2>&1
     rm -f /etc/systemd/system/hammer-sb.service
+    rm -f /etc/systemd/system/hammer-sub.service
     systemctl daemon-reload
     
     # 2. 清理二进制文件与配置

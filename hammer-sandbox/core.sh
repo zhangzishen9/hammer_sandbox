@@ -187,14 +187,14 @@ get_traffic() {
     init_quota
 
     local api="http://127.0.0.1:9090/traffic"
-    local resp=$(curl -sm2 "$api" 2>/dev/null || echo "")
+    local resp=$(curl -sm2 "$api" 2>/dev/null | sed -n '1p' || echo "")
     if [[ -z "$resp" ]]; then
         traffic_up="N/A"
         traffic_down="N/A"
         return
     fi
-    local api_down=$(echo "$resp" | jq -r '.down // 0' 2>/dev/null)
-    local api_up=$(echo "$resp" | jq -r '.up // 0' 2>/dev/null)
+    local api_down=$(echo "$resp" | jq -r '.downTotal // .down // 0' 2>/dev/null)
+    local api_up=$(echo "$resp" | jq -r '.upTotal // .up // 0' 2>/dev/null)
     [[ ! "$api_down" =~ ^[0-9]+$ ]] && api_down=0
     [[ ! "$api_up" =~ ^[0-9]+$ ]] && api_up=0
 
@@ -266,9 +266,9 @@ EOF
 # 保存流量 (退出或重载前调用，累加当前session到持久化)
 persist_traffic() {
     local api="http://127.0.0.1:9090/traffic"
-    local resp=$(curl -sm2 "$api" 2>/dev/null || echo "")
-    local api_down=$(echo "$resp" | jq -r '.down // 0' 2>/dev/null)
-    local api_up=$(echo "$resp" | jq -r '.up // 0' 2>/dev/null)
+    local resp=$(curl -sm2 "$api" 2>/dev/null | sed -n '1p' || echo "")
+    local api_down=$(echo "$resp" | jq -r '.downTotal // .down // 0' 2>/dev/null)
+    local api_up=$(echo "$resp" | jq -r '.upTotal // .up // 0' 2>/dev/null)
     [[ ! "$api_down" =~ ^[0-9]+$ ]] && api_down=0
     [[ ! "$api_up" =~ ^[0-9]+$ ]] && api_up=0
 

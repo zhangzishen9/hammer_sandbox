@@ -64,8 +64,6 @@ except Exception as e:
             # 保存推导结果
             if [[ -n "$pbk" ]]; then
                 echo "$pbk" > "$SB_CONFIG_DIR/reality_pub.key"
-                # 也写入 config.json 方便下次读取
-                jq --arg pub "$pbk" '(.inbounds[] | select(.tag=="in-vl")).tls.reality.public_key = $pub' "$SB_CONF" > "${SB_CONF}.tmp" && mv "${SB_CONF}.tmp" "$SB_CONF"
                 log_info "已从 private_key 推导并保存 public_key"
             else
                 log_error "无法推导 public_key，请安装 wireguard-tools 或 python3-cryptography"
@@ -86,8 +84,8 @@ except Exception as e:
     c_p_tc=$(get_client_port "$p_tc")
     c_p_an=$(get_client_port "$p_an")
     [[ -z "$uuid" ]] && uuid=$(jq -r '.inbounds[0].users[0].uuid' "$SB_CONF" 2>/dev/null)
-    # 提取 WARP 直连入站
-    warp_nodes=$(jq -c '[.inbounds[] | select(.tag | startswith("in-warp")) | {tag, port: .listen_port, sid: .tls.reality.short_id[0]}]' "$SB_CONF" 2>/dev/null || echo "[]")
+    # WARP 仅作为服务端内部出口池，不再发布逐路公网节点。
+    warp_nodes="[]"
     warp_count=$(echo "$warp_nodes" | jq 'length')
 }
 
