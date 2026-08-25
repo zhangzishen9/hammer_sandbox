@@ -366,7 +366,11 @@ menu_bench() {
 # ==================== 主循环 ====================
 main() {
     if systemctl is-enabled --quiet hammer-sub 2>/dev/null; then
-        install_subscription_service >/dev/null 2>&1 || log_warn "订阅服务升级同步失败，请检查 hammer-sub。"
+        local sub_upgrade_log
+        if ! sub_upgrade_log=$(install_subscription_service 2>&1); then
+            log_warn "订阅服务升级同步失败，原因如下："
+            echo "$sub_upgrade_log" | tail -n 12
+        fi
     fi
     update_stats
     while true; do

@@ -79,12 +79,21 @@ install_subscription_service() {
         return 1
     }
     [[ -x /usr/local/bin/hammer-stats ]] || { log_error "当前内核不支持用户统计，请先执行选项1安装/更新 Sing-box。"; return 1; }
-    cp "${SCRIPT_DIR:-$(pwd)}/subscription_server.sh" /etc/hammer-sb/subscription_server.sh
-    cp "${SCRIPT_DIR:-$(pwd)}/subscription_manager.py" /etc/hammer-sb/subscription_manager.py
+    local service_changed=0
+    local source_dir="${SCRIPT_DIR:-$(pwd)}"
+    if ! cmp -s "$source_dir/subscription_server.sh" /etc/hammer-sb/subscription_server.sh; then
+        cp "$source_dir/subscription_server.sh" /etc/hammer-sb/subscription_server.sh || return 1
+        service_changed=1
+    fi
+    if ! cmp -s "$source_dir/subscription_manager.py" /etc/hammer-sb/subscription_manager.py; then
+        cp "$source_dir/subscription_manager.py" /etc/hammer-sb/subscription_manager.py || return 1
+        service_changed=1
+    fi
     chmod 700 /etc/hammer-sb/subscription_server.sh
     chmod 700 /etc/hammer-sb/subscription_manager.py
     nft delete table inet hammer_sub >/dev/null 2>&1 || true
-    cat > /etc/systemd/system/hammer-sub.service <<EOF
+    local unit_tmp="/tmp/hammer-sub.service.$$"
+    cat > "$unit_tmp" <<EOF
 [Unit]
 Description=Hammer read-only subscription service
 After=network.target hammer-sb.service
@@ -103,10 +112,17 @@ ReadWritePaths=/etc/hammer-sb
 [Install]
 WantedBy=multi-user.target
 EOF
+    if ! cmp -s "$unit_tmp" /etc/systemd/system/hammer-sub.service; then
+        install -m 644 "$unit_tmp" /etc/systemd/system/hammer-sub.service || { rm -f "$unit_tmp"; return 1; }
+        service_changed=1
+    fi
+    rm -f "$unit_tmp"
     python3 /etc/hammer-sb/subscription_manager.py reconcile || return 1
-    systemctl daemon-reload
+    (( service_changed == 1 )) && systemctl daemon-reload
     systemctl enable hammer-sub || return 1
-    systemctl restart hammer-sub || return 1
+    if (( service_changed == 1 )) || ! systemctl is-active --quiet hammer-sub; then
+        systemctl restart hammer-sub || return 1
+    fi
     log_info "只读订阅服务已启动: ${SUB_BIND}:${SUB_PORT}。"
 }
 
