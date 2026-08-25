@@ -92,6 +92,7 @@ install_subscription_service() {
     chmod 700 /etc/hammer-sb/subscription_server.sh
     chmod 700 /etc/hammer-sb/subscription_manager.py
     nft delete table inet hammer_sub >/dev/null 2>&1 || true
+    local manager_hash=$(sha256sum /etc/hammer-sb/subscription_manager.py | awk '{print $1}')
     local unit_tmp="/tmp/hammer-sub.service.$$"
     cat > "$unit_tmp" <<EOF
 [Unit]
@@ -100,6 +101,7 @@ After=network.target hammer-sb.service
 
 [Service]
 User=root
+Environment=HAMMER_SUB_CODE_SHA256=${manager_hash}
 ExecStart=/usr/bin/python3 /etc/hammer-sb/subscription_manager.py serve ${SUB_PORT}
 Restart=on-failure
 RestartSec=5

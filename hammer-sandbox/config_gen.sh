@@ -353,32 +353,45 @@ generate_config_silent() {
     local tc=$(grep '^TC=' "$pf" | cut -d= -f2)
     local an=$(grep '^AN=' "$pf" | cut -d= -f2)
 
-    local disabled_tags=()
-    [[ "$vl" == "0" ]] && disabled_tags+=("in-vl")
-    [[ "$vm" == "0" ]] && disabled_tags+=("in-vm")
-    [[ "$hy" == "0" ]] && disabled_tags+=("in-hy")
-    [[ "$tc" == "0" ]] && disabled_tags+=("in-tc")
-    [[ "$an" == "0" ]] && disabled_tags+=("in-an")
+    local cache="/etc/hammer-sb/disabled_inbounds.json"
+    [[ -s "$cache" ]] || echo '{}' > "$cache"
+    cp "$config" "${config}.tmp" || return 1
 
-    if [[ ${#disabled_tags[@]} -eq 0 ]]; then
-        systemctl reload hammer-sb 2>/dev/null || systemctl start hammer-sb
-        log_info "全部协议已开启，已热重载。"
-        return 0
-    fi
-
-    local filter=""
-    for t in "${disabled_tags[@]}"; do
-        filter+=" .tag != \"$t\" and"
+    local spec tag state port_key saved port_value
+    for spec in "in-vl:$vl:VL" "in-vm:$vm:VM" "in-hy:$hy:HY" "in-tc:$tc:TC" "in-an:$an:AN"; do
+        IFS=: read -r tag state port_key <<< "$spec"
+        if [[ "$state" == "0" ]]; then
+            saved=$(jq -c --arg tag "$tag" '.inbounds[] | select(.tag==$tag)' "${config}.tmp" | head -n1)
+            if [[ -n "$saved" ]]; then
+                jq --arg tag "$tag" --argjson node "$saved" '.[$tag]=$node' "$cache" > "${cache}.tmp" && mv "${cache}.tmp" "$cache"
+                jq --arg tag "$tag" '.inbounds = [.inbounds[] | select(.tag != $tag)]' "${config}.tmp" > "${config}.next" && mv "${config}.next" "${config}.tmp"
+            fi
+        elif ! jq -e --arg tag "$tag" '.inbounds[] | select(.tag==$tag)' "${config}.tmp" >/dev/null; then
+            saved=$(jq -c --arg tag "$tag" '.[$tag] // empty' "$cache")
+            [[ -n "$saved" ]] || saved=$(jq -c --arg tag "$tag" '.inbounds[] | select(.tag==$tag)' "$BASE_CONF" | head -n1)
+            if [[ -z "$saved" ]]; then
+                rm -f "${config}.tmp"
+                log_error "无法恢复协议入站: $tag"
+                return 1
+            fi
+            port_value=$(grep "^${port_key}=" "$PORTS_CONF" 2>/dev/null | cut -d= -f2)
+            [[ "$port_value" =~ ^[0-9]+$ ]] && saved=$(jq --argjson port "$port_value" '.listen_port=$port' <<< "$saved")
+            jq --argjson node "$saved" '.inbounds += [$node]' "${config}.tmp" > "${config}.next" && mv "${config}.next" "${config}.tmp"
+            jq --arg tag "$tag" 'del(.[$tag])' "$cache" > "${cache}.tmp" && mv "${cache}.tmp" "$cache"
+        fi
     done
-    filter="${filter% and}"
 
-    jq ".inbounds = [.inbounds[] | select($filter)]" "$config" > "${config}.tmp"
-    if [[ $? -eq 0 ]]; then
+    if /usr/local/bin/sing-box check -c "${config}.tmp"; then
         mv "${config}.tmp" "$config"
-        systemctl reload hammer-sb 2>/dev/null || systemctl start hammer-sb
+        if [[ -x /etc/hammer-sb/subscription_manager.py ]]; then
+            python3 /etc/hammer-sb/subscription_manager.py reconcile || return 1
+        else
+            systemctl reload hammer-sb 2>/dev/null || systemctl start hammer-sb
+        fi
         log_info "协议配置已更新并热重载。"
     else
         rm -f "${config}.tmp"
-        log_error "配置重组失败。"
+        log_error "协议配置校验失败，未应用修改。"
+        return 1
     fi
 }
