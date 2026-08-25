@@ -28,7 +28,6 @@ update_stats() {
     detect_os
     get_vps_info
     check_versions
-    get_traffic
 }
 
 # ==================== 状态区 ====================
@@ -95,7 +94,16 @@ show_status() {
             echo -e "  WARP:          ${red}未创建${plain}"
         fi
     fi
-    echo -e "流量: ${yellow}${traffic_used:-N/A}${plain}/${yellow}${traffic_total:-N/A}${plain} (${yellow}${traffic_pct:-0%}${plain})  剩余: ${green}${traffic_remain:-N/A}${plain}  重置: 每月${green}${traffic_reset_day:-1号}${plain}"
+    local sub_db="/etc/hammer-sb/subscriptions.json"
+    if [[ -s "$sub_db" ]]; then
+        local sub_total=$(jq 'length' "$sub_db" 2>/dev/null || echo 0)
+        local sub_active=$(jq '[.[] | select(.active_runtime == true)] | length' "$sub_db" 2>/dev/null || echo 0)
+        local sub_inactive=$((sub_total - sub_active))
+        local sub_used=$(jq -r '([.[].used_bytes // 0] | add // 0) / 1073741824 | . * 100 | floor / 100' "$sub_db" 2>/dev/null || echo 0)
+        echo -e "独立订阅: ${yellow}${sub_total}${plain}个  生效:${green}${sub_active}${plain}  停用/到期/超额:${red}${sub_inactive}${plain}  合计已用:${yellow}${sub_used} GB${plain}"
+    else
+        echo -e "独立订阅: ${yellow}尚未创建${plain}"
+    fi
 }
 
 # ==================== 主菜单 ====================
@@ -113,9 +121,8 @@ show_menu() {
     echo -e "${yellow} 5.${plain} WARP 管理 【分流/直连/出口IP】"
     echo -e " ----------------------------------------------------------------------------------"
     echo -e "${yellow} 6.${plain} 独立订阅 【用户/流量/到期/撤销】"
-    echo -e "${yellow} 7.${plain} 流量管理 【配额/统计/重置】"
-    echo -e "${yellow} 8.${plain} 系统优化 【BBR/内核版本/日志】"
-    echo -e "${yellow} 9.${plain} VPS 体检 【回程/IP质量/跑分】"
+    echo -e "${yellow} 7.${plain} 系统优化 【BBR/内核版本/日志】"
+    echo -e "${yellow} 8.${plain} VPS 体检 【回程/IP质量/跑分】"
     echo -e " ----------------------------------------------------------------------------------"
     echo -e "${yellow} 0.${plain} 退出"
     echo -e "${blue}====================================================================================${plain}"
@@ -325,39 +332,7 @@ menu_sub() {
     done
 }
 
-# ==================== 子菜单7: 流量管理 ====================
-menu_traffic() {
-    while true; do
-        clear
-        echo -e "${blue}==================== 流量管理 ====================${plain}"
-        get_traffic
-        echo -e "配额: ${yellow}${traffic_total:-N/A}${plain}  已用: ${red}${traffic_used:-N/A}${plain} (${yellow}${traffic_pct:-0%}${plain})  剩余: ${green}${traffic_remain:-N/A}${plain}"
-        echo -e "重置周期: 每月 ${green}${traffic_reset_day:-1号}${plain}  上行: ${yellow}${traffic_up:-N/A}${plain}  下行: ${green}${traffic_down:-N/A}${plain}"
-        echo -e "${blue}--------------------------------------------------${plain}"
-        echo -e "${yellow} 1.${plain} 设置流量配额"
-        echo -e "${yellow} 2.${plain} 手动重置流量统计"
-        echo -e "${yellow} 0.${plain} 返回上层"
-        read -p "请选择: " c
-        case $c in
-            1) read -p "设置总流量配额 (GB, 默认500): " tg
-                tg=${tg:-500}
-                read -p "设置每月重置日 (1-28, 默认1号): " rd
-                rd=${rd:-1}
-                cat > /etc/hammer-sb/quota.conf <<EOF
-TOTAL_GB=$tg
-RESET_DAY=$rd
-EOF
-                log_info "配额已更新: 总额 ${tg}GB, 每月${rd}号重置。"
-                read -p "按回车继续..." ;;
-            2) rm -f /etc/hammer-sb/usage.db
-                log_info "流量统计已手动重置。"
-                read -p "按回车继续..." ;;
-            0) return ;;
-        esac
-    done
-}
-
-# ==================== 子菜单8: 系统优化 ====================
+# ==================== 子菜单7: 系统优化 ====================
 menu_system() {
     while true; do
         clear
@@ -378,7 +353,7 @@ menu_system() {
     done
 }
 
-# ==================== 子菜单9: VPS 体检 ====================
+# ==================== 子菜单8: VPS 体检 ====================
 menu_bench() {
     while true; do
         show_bench_menu
@@ -404,9 +379,8 @@ main() {
             4) menu_proto ;;
             5) menu_warp ;;
             6) menu_sub ;;
-            7) menu_traffic ;;
-            8) menu_system ;;
-            9) menu_bench ;;
+            7) menu_system ;;
+            8) menu_bench ;;
             0) exit 0 ;;
             *) sleep 1 ;;
         esac
