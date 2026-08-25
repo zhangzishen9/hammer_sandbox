@@ -166,7 +166,8 @@ EOF
          },
          experimental:{
            cache_file:{enabled:true,path:"/etc/hammer-sb/cache.db"},
-           clash_api:{external_controller:"127.0.0.1:9090"}
+           clash_api:{external_controller:"127.0.0.1:9090"},
+           v2ray_api:{listen:"127.0.0.1:8080",stats:{enabled:true,users:[]}}
          }
        }' > "$BASE_CONF"
 
@@ -185,6 +186,7 @@ EOF
     else
         systemctl start hammer-sb
     fi
+    [[ -x /etc/hammer-sb/subscription_manager.py ]] && python3 /etc/hammer-sb/subscription_manager.py reconcile || true
 
     # 打印报告
     fetch_ip

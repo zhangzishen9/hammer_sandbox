@@ -14,7 +14,7 @@ init_subscriptions() {
 create_subscription() {
     init_subscriptions
     [[ -f /etc/hammer-sb/config.json && -x /usr/local/bin/sing-box ]] || { log_error "请先安装 Sing-box 并初始化协议配置。"; return 1; }
-    command -v nft >/dev/null 2>&1 || { log_error "缺少 nftables。"; return 1; }
+    [[ -x /usr/local/bin/hammer-stats ]] || { log_error "当前内核不支持用户统计，请先执行选项1安装/更新 Sing-box。"; return 1; }
     read -p "订阅名称: " sub_name
     [[ -n "$sub_name" ]] || { log_error "名称不能为空。"; return 1; }
     echo "可选协议: vl,vm,hy,tc,an"
@@ -40,24 +40,16 @@ create_subscription() {
     local short_id=$(openssl rand -hex 8)
     local server=$(get_client_addr)
     local protocols_json=$(printf '%s' "$sub_protocols" | tr ',' '\n' | jq -R . | jq -s .)
-    local ports_json='{}'
-    local proto
-    IFS=',' read -ra selected_protocols <<< "$sub_protocols"
-    for proto in "${selected_protocols[@]}"; do
-        chooseport
-        ports_json=$(jq --arg p "$proto" --argjson port "$port" '. + {($p):$port}' <<< "$ports_json")
-    done
     local total_bytes=$((sub_total * 1073741824))
     jq --arg token "$token" --arg name "$sub_name" --arg credential "$credential" --arg sid "$short_id" --arg server "$server" \
-       --argjson protocols "$protocols_json" --argjson ports "$ports_json" \
+       --argjson protocols "$protocols_json" \
        --argjson total "$total_bytes" --argjson expire "$sub_expire" --argjson reset_day "$sub_reset_day" \
-       '. += [{token:$token,name:$name,credential:$credential,short_id:$sid,server:$server,protocols:$protocols,ports:$ports,total_bytes:$total,expire:$expire,reset_day:$reset_day,enabled:true,used_bytes:0,counter_bytes:0}]' \
+       '. += [{token:$token,name:$name,credential:$credential,short_id:$sid,server:$server,protocols:$protocols,total_bytes:$total,expire:$expire,reset_day:$reset_day,enabled:true,upload_bytes:0,download_bytes:0,used_bytes:0}]' \
        "$SUB_DB" > "$SUB_DB.tmp" && mv "$SUB_DB.tmp" "$SUB_DB"
     chmod 600 "$SUB_DB"
     local addr=$(get_client_addr)
     log_info "订阅地址: http://${addr}:${SUB_PORT}/sub/${token}"
-    log_info "独立协议端口: $(jq -r 'to_entries | map("\(.key)=\(.value)") | join(" ")' <<< "$ports_json")"
-    log_warn "请在云安全组/防火墙放行 TCP 16000，以及上面协议对应的 TCP/UDP 端口。"
+    log_info "所有订阅共享主协议端口，只需额外放行订阅服务 TCP 16000。"
     log_warn "这是 HTTP 链接，订阅内容和 Token 在传输途中不加密；请只发给可信用户。"
     log_info "正在同步独立用户配置并启动订阅服务..."
     install_subscription_service || {
@@ -86,11 +78,12 @@ install_subscription_service() {
         log_error "请先安装 Sing-box 并初始化协议配置。"
         return 1
     }
-    command -v nft >/dev/null 2>&1 || { log_error "缺少 nftables，请先安装 nftables。"; return 1; }
+    [[ -x /usr/local/bin/hammer-stats ]] || { log_error "当前内核不支持用户统计，请先执行选项1安装/更新 Sing-box。"; return 1; }
     cp "${SCRIPT_DIR:-$(pwd)}/subscription_server.sh" /etc/hammer-sb/subscription_server.sh
     cp "${SCRIPT_DIR:-$(pwd)}/subscription_manager.py" /etc/hammer-sb/subscription_manager.py
     chmod 700 /etc/hammer-sb/subscription_server.sh
     chmod 700 /etc/hammer-sb/subscription_manager.py
+    nft delete table inet hammer_sub >/dev/null 2>&1 || true
     cat > /etc/systemd/system/hammer-sub.service <<EOF
 [Unit]
 Description=Hammer read-only subscription service

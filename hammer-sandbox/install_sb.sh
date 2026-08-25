@@ -35,10 +35,10 @@ install_base_deps() {
     detect_os
     case "$release" in
         ubuntu|debian)
-            apt update -y && apt install -y wget curl jq nftables openssl python3 bc
+            apt update -y && apt install -y wget curl jq openssl python3 bc build-essential
             ;;
         centos)
-            yum install -y epel-release && yum install -y wget curl jq nftables openssl python3 bc
+            yum install -y epel-release && yum install -y wget curl jq openssl python3 bc gcc tar
             ;;
     esac
     log_info "基础依赖安装完成。"
@@ -62,32 +62,33 @@ install_kernel() {
     latest_ver=$(get_latest_version)
     local_ver=$(get_local_version)
 
-    if [[ "$latest_ver" == "$local_ver" ]]; then
+    if [[ "$latest_ver" == "$local_ver" && -x /usr/local/bin/hammer-stats ]]; then
         log_info "当前已是最新版本 ($local_ver)，无需更新。"
         return
     fi
 
-    log_info "发现新版本: $latest_ver (本地: $local_ver)，正在准备安装..."
-    
-    # 构造下载链接 (Construct Download URL)
-    # 示例: https://github.com/SagerNet/sing-box/releases/download/v1.8.10/sing-box-1.8.10-linux-amd64.tar.gz
-    download_url="https://github.com/SagerNet/sing-box/releases/download/v${latest_ver}/sing-box-${latest_ver}-linux-${cpu}.tar.gz"
-    
-    wget -O /tmp/sing-box.tar.gz "$download_url"
-    if [[ $? -ne 0 ]]; then
-        log_error "下载失败，请检查镜像源。"
-        exit 1
+    log_info "正在构建支持按用户流量统计的 Sing-Box $latest_ver（首次约需数分钟）..."
+    local build_dir=$(mktemp -d /tmp/hammer-build.XXXXXX)
+    local source_url="https://github.com/SagerNet/sing-box/archive/refs/tags/v${latest_ver}.tar.gz"
+    wget -qO "$build_dir/source.tar.gz" "$source_url" || { log_error "下载 Sing-Box 源码失败。"; return 1; }
+    tar -xzf "$build_dir/source.tar.gz" -C "$build_dir" || return 1
+    local source_dir="$build_dir/sing-box-${latest_ver}"
+    local go_version=$(awk '/^go / {print $2; exit}' "$source_dir/go.mod")
+    local go_cpu="$cpu"
+    [[ "$cpu" == "armv7" ]] && go_cpu="armv6l"
+    wget -qO "$build_dir/go.tar.gz" "https://go.dev/dl/go${go_version}.linux-${go_cpu}.tar.gz" || { log_error "下载 Go $go_version 失败。"; return 1; }
+    tar -xzf "$build_dir/go.tar.gz" -C "$build_dir" || return 1
+    cp "${SCRIPT_DIR:-$(pwd)}/hammer_stats.go" "$source_dir/cmd/hammer-stats.go"
+    local build_tags="with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_v2ray_api,badlinkname,tfogo_checklinkname0"
+    local build_ldflags="-s -w -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0"
+    (cd "$source_dir" && CGO_ENABLED=0 "$build_dir/go/bin/go" build -trimpath -tags "$build_tags" -ldflags "$build_ldflags" -o "$build_dir/sing-box" ./cmd/sing-box && CGO_ENABLED=0 "$build_dir/go/bin/go" build -trimpath -tags "$build_tags" -ldflags "$build_ldflags" -o "$build_dir/hammer-stats" ./cmd/hammer-stats.go) || { log_error "自定义内核构建失败。"; return 1; }
+    install -m 755 "$build_dir/sing-box" "$SB_BINARY_PATH"
+    install -m 755 "$build_dir/hammer-stats" /usr/local/bin/hammer-stats
+    rm -rf "$build_dir"
+    if systemctl is-active --quiet hammer-sb 2>/dev/null; then
+        systemctl restart hammer-sb || { log_error "新内核已安装，但 Sing-Box 重启失败。"; return 1; }
     fi
-
-    # 解压并替换 (Extract and Replace)
-    tar -zxvf /tmp/sing-box.tar.gz -C /tmp/
-    mv /tmp/sing-box-${latest_ver}-linux-${cpu}/sing-box "$SB_BINARY_PATH"
-    chmod +x "$SB_BINARY_PATH"
-    
-    # 清理垃圾 (Cleanup)
-    rm -rf /tmp/sing-box.tar.gz /tmp/sing-box-${latest_ver}-linux-${cpu}
-    
-    log_info "Sing-Box $latest_ver 安装完成！"
+    log_info "Sing-Box $latest_ver 已安装，并启用按用户流量统计。"
 }
 
 # 创建 Systemd 服务 (Setup Systemd Service)
@@ -104,7 +105,10 @@ After=network.target nss-lookup.target
 User=root
 WorkingDirectory=$SB_CONFIG_DIR
 ExecStart=$SB_BINARY_PATH run -c $SB_CONFIG_DIR/config.json
+ExecReload=-/usr/bin/python3 /etc/hammer-sb/subscription_manager.py settle
 ExecReload=/bin/kill -HUP \$MAINPID
+ExecStop=-/usr/bin/python3 /etc/hammer-sb/subscription_manager.py settle
+ExecStop=/bin/kill -TERM \$MAINPID
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=65535
