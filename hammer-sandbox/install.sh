@@ -50,7 +50,21 @@ for s in "${scripts[@]}"; do
     mv "$INSTALL_PATH/$s.tmp" "$INSTALL_PATH/$s"
 done
 
+# 逻辑：下载 VPS 体检中心脚本
+mkdir -p "$INSTALL_PATH/bench"
+bench_scripts=("backtrace.sh" "route.sh" "pingtest.sh" "ipcheck.sh" "media_check.sh" "bench.sh" "yabs.sh" "ecs.sh")
+for bs in "${bench_scripts[@]}"; do
+    echo -e "正在拉取 bench/$bs..."
+    if ! wget -qO "$INSTALL_PATH/bench/$bs.tmp" "$BASE_URL/bench/$bs" || [[ ! -s "$INSTALL_PATH/bench/$bs.tmp" ]]; then
+        rm -f "$INSTALL_PATH/bench/$bs.tmp"
+        echo -e "${yellow}拉取 bench/$bs 失败，跳过（后续体检时将自动重试）。${plain}"
+    else
+        mv "$INSTALL_PATH/bench/$bs.tmp" "$INSTALL_PATH/bench/$bs"
+    fi
+done
+
 chmod +x "$INSTALL_PATH"/*.sh
+chmod +x "$INSTALL_PATH"/bench/*.sh 2>/dev/null || true
 
 # 3. 初始安装 (注册快捷指令与服务)
 cd "$INSTALL_PATH"
